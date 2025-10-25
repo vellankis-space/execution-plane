@@ -8,26 +8,46 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, Cpu, MessageSquare, Zap, Database, GitBranch, AlertTriangle } from "lucide-react";
+import { Sparkles, Cpu, Database, GitBranch, Settings2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 const LLM_PROVIDERS = [
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "google", label: "Google" },
+  { value: "cohere", label: "Cohere" },
+  { value: "meta", label: "Meta" },
+  { value: "mistral", label: "Mistral AI" },
 ];
 
 const MODELS = {
-  openai: ["gpt-4o", "gpt-4-turbo", "gpt-4o-mini"],
-  anthropic: ["claude-sonnet-4-5", "claude-opus-4-1", "claude-3-5-haiku"],
-  google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"],
+  anthropic: [
+    "claude-sonnet-4-5",
+    "claude-opus-4-1",
+    "claude-3-5-sonnet",
+    "claude-3-5-haiku",
+    "claude-3-opus",
+    "claude-3-sonnet",
+    "claude-3-haiku"
+  ],
+  google: [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash"
+  ],
+  cohere: ["command-r-plus", "command-r", "command", "command-light"],
+  meta: ["llama-3.3-70b", "llama-3.1-405b", "llama-3.1-70b", "llama-3.1-8b"],
+  mistral: ["mistral-large", "mistral-medium", "mistral-small", "mixtral-8x7b"],
 };
 
 const AGENT_TYPES = [
-  { value: "react", label: "ReAct", description: "Reasoning and Acting pattern" },
-  { value: "plan-execute", label: "Plan & Execute", description: "Planning then execution" },
-  { value: "reflection", label: "Reflection", description: "Self-critique and improve" },
-  { value: "custom", label: "Custom Graph", description: "Define your own flow" },
+  { value: "react", label: "ReAct" },
+  { value: "plan-execute", label: "Plan & Execute" },
+  { value: "reflection", label: "Reflection" },
+  { value: "custom", label: "Custom Graph" },
 ];
 
 const MEMORY_TYPES = [
@@ -59,7 +79,6 @@ export function AgentBuilder() {
   const [streamingEnabled, setStreamingEnabled] = useState(true);
   const [humanInLoop, setHumanInLoop] = useState(false);
   const [recursionLimit, setRecursionLimit] = useState("25");
-  const [timeoutSeconds, setTimeoutSeconds] = useState("120");
 
   const handleProviderChange = (provider: string) => {
     setLlmProvider(provider);
@@ -97,7 +116,6 @@ export function AgentBuilder() {
       streamingEnabled,
       humanInLoop,
       recursionLimit: parseInt(recursionLimit),
-      timeoutSeconds: parseInt(timeoutSeconds),
     };
 
     console.log("Generated LangGraph Agent Configuration:", config);
@@ -109,104 +127,105 @@ export function AgentBuilder() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-background via-background to-background/95 relative overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_hsl(263_40%_10%)_0%,_hsl(240_10%_3.9%)_50%)] pointer-events-none" />
-      
-      <div className="relative z-10 container mx-auto px-4 py-6 max-w-7xl">
-        {/* Compact Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center gap-2 mb-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
-            <Sparkles className="w-3.5 h-3.5 text-accent" />
-            <span className="text-xs font-medium text-accent">LangGraph Agent Builder</span>
+    <div className="min-h-screen w-full bg-background">
+      <div className="container mx-auto px-4 py-6 max-w-7xl">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6 pb-4 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <Sparkles className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold">Agent Builder</h1>
+              <p className="text-xs text-muted-foreground">Configure your LangGraph agent</p>
+            </div>
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold mb-2 bg-gradient-to-r from-foreground via-accent to-primary bg-clip-text text-transparent">
-            Configure Your Agent
-          </h1>
+          <Button variant="hero" size="lg" onClick={handleGenerateAgent}>
+            <Cpu className="w-4 h-4 mr-2" />
+            Generate Agent
+          </Button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Main Configuration - Left Column */}
-          <div className="lg:col-span-8 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Agent Identity & Type */}
-              <Card className="p-4 bg-card/50 backdrop-blur-sm border-border">
-                <div className="flex items-center gap-2 mb-3">
-                  <Cpu className="w-4 h-4 text-primary" />
-                  <h2 className="text-sm font-semibold">Identity & Type</h2>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <Label htmlFor="agent-name" className="text-xs">Agent Name</Label>
-                    <Input
-                      id="agent-name"
-                      placeholder="ResearchAssistant"
-                      value={agentName}
-                      onChange={(e) => setAgentName(e.target.value)}
-                      className="mt-1.5 h-9 bg-secondary/50 border-border text-sm"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="agent-type" className="text-xs">Architecture Pattern</Label>
-                    <Select value={agentType} onValueChange={setAgentType}>
-                      <SelectTrigger id="agent-type" className="mt-1.5 h-9 bg-secondary/50 border-border text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {AGENT_TYPES.map(type => (
-                          <SelectItem key={type.value} value={type.value}>
-                            <div className="flex flex-col">
-                              <span className="text-sm">{type.label}</span>
-                              <span className="text-xs text-muted-foreground">{type.description}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </Card>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Panel - System & Model Configuration */}
+          <div className="lg:col-span-2 space-y-4">
+            {/* System Prompt - Most prominent like ChatGPT */}
+            <div>
+              <Label htmlFor="system-prompt" className="text-sm font-medium mb-2 block">System</Label>
+              <Textarea
+                id="system-prompt"
+                placeholder="You are a helpful AI assistant that..."
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                className="min-h-[140px] bg-card border-border resize-none font-mono text-sm"
+              />
+            </div>
 
-              {/* LLM Configuration */}
-              <Card className="p-4 bg-card/50 backdrop-blur-sm border-border">
-                <div className="flex items-center gap-2 mb-3">
-                  <MessageSquare className="w-4 h-4 text-primary" />
-                  <h2 className="text-sm font-semibold">LLM Settings</h2>
+            {/* Model Selection - Clean Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="provider" className="text-sm font-medium mb-2 block">Provider</Label>
+                <Select value={llmProvider} onValueChange={handleProviderChange}>
+                  <SelectTrigger id="provider" className="bg-card border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LLM_PROVIDERS.map(provider => (
+                      <SelectItem key={provider.value} value={provider.value}>
+                        {provider.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="model" className="text-sm font-medium mb-2 block">Model</Label>
+                <Select value={llmModel} onValueChange={setLlmModel}>
+                  <SelectTrigger id="model" className="bg-card border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    {MODELS[llmProvider as keyof typeof MODELS].map(model => (
+                      <SelectItem key={model} value={model}>
+                        {model}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="agent-type" className="text-sm font-medium mb-2 block">Architecture</Label>
+                <Select value={agentType} onValueChange={setAgentType}>
+                  <SelectTrigger id="agent-type" className="bg-card border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AGENT_TYPES.map(type => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Settings Sections */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Parameters */}
+              <Card className="p-4 bg-card border-border">
+                <div className="flex items-center gap-2 mb-4">
+                  <Settings2 className="w-4 h-4 text-muted-foreground" />
+                  <h3 className="text-sm font-medium">Parameters</h3>
                 </div>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <Label htmlFor="provider" className="text-xs">Provider</Label>
-                      <Select value={llmProvider} onValueChange={handleProviderChange}>
-                        <SelectTrigger id="provider" className="mt-1.5 h-9 bg-secondary/50 border-border text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {LLM_PROVIDERS.map(provider => (
-                            <SelectItem key={provider.value} value={provider.value}>
-                              {provider.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="model" className="text-xs">Model</Label>
-                      <Select value={llmModel} onValueChange={setLlmModel}>
-                        <SelectTrigger id="model" className="mt-1.5 h-9 bg-secondary/50 border-border text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {MODELS[llmProvider as keyof typeof MODELS].map(model => (
-                            <SelectItem key={model} value={model}>
-                              {model}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
+                <div className="space-y-4">
                   <div>
-                    <Label htmlFor="temperature" className="text-xs">Temperature: {temperature[0].toFixed(1)}</Label>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label htmlFor="temperature" className="text-xs text-muted-foreground">Temperature</Label>
+                      <span className="text-xs font-medium">{temperature[0].toFixed(1)}</span>
+                    </div>
                     <Slider
                       id="temperature"
                       min={0}
@@ -214,66 +233,44 @@ export function AgentBuilder() {
                       step={0.1}
                       value={temperature}
                       onValueChange={setTemperature}
-                      className="mt-2"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="max-iter" className="text-xs text-muted-foreground mb-2 block">Max Iterations</Label>
+                    <Input
+                      id="max-iter"
+                      type="number"
+                      min="1"
+                      value={maxIterations}
+                      onChange={(e) => setMaxIterations(e.target.value)}
+                      className="h-9 bg-secondary/50 border-border"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="recursion" className="text-xs text-muted-foreground mb-2 block">Recursion Limit</Label>
+                    <Input
+                      id="recursion"
+                      type="number"
+                      min="1"
+                      value={recursionLimit}
+                      onChange={(e) => setRecursionLimit(e.target.value)}
+                      className="h-9 bg-secondary/50 border-border"
                     />
                   </div>
                 </div>
               </Card>
-            </div>
-
-            {/* System Prompt */}
-            <Card className="p-4 bg-card/50 backdrop-blur-sm border-border">
-              <div className="flex items-center gap-2 mb-3">
-                <MessageSquare className="w-4 h-4 text-primary" />
-                <h2 className="text-sm font-semibold">System Prompt</h2>
-              </div>
-              <Textarea
-                placeholder="You are a helpful AI assistant that..."
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                className="min-h-[80px] bg-secondary/50 border-border resize-none text-sm"
-              />
-            </Card>
-
-            {/* Tools & Memory */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Tools Selection */}
-              <Card className="p-4 bg-card/50 backdrop-blur-sm border-border">
-                <div className="flex items-center gap-2 mb-3">
-                  <Zap className="w-4 h-4 text-primary" />
-                  <h2 className="text-sm font-semibold">Tools</h2>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {AVAILABLE_TOOLS.map(tool => (
-                    <div
-                      key={tool.id}
-                      className="flex items-center space-x-2 p-2 rounded border border-border bg-secondary/30 hover:bg-secondary/50 transition-colors cursor-pointer"
-                      onClick={() => handleToolToggle(tool.id)}
-                    >
-                      <Checkbox
-                        id={tool.id}
-                        checked={selectedTools.includes(tool.id)}
-                        onCheckedChange={() => handleToolToggle(tool.id)}
-                      />
-                      <label htmlFor={tool.id} className="text-xs font-medium cursor-pointer flex-1">
-                        {tool.label}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </Card>
 
               {/* Memory & State */}
-              <Card className="p-4 bg-card/50 backdrop-blur-sm border-border">
-                <div className="flex items-center gap-2 mb-3">
-                  <Database className="w-4 h-4 text-primary" />
-                  <h2 className="text-sm font-semibold">Memory & State</h2>
+              <Card className="p-4 bg-card border-border">
+                <div className="flex items-center gap-2 mb-4">
+                  <Database className="w-4 h-4 text-muted-foreground" />
+                  <h3 className="text-sm font-medium">Memory & State</h3>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <div>
-                    <Label htmlFor="memory-type" className="text-xs">Checkpoint Storage</Label>
+                    <Label htmlFor="memory" className="text-xs text-muted-foreground mb-2 block">Checkpoint Storage</Label>
                     <Select value={memoryType} onValueChange={setMemoryType}>
-                      <SelectTrigger id="memory-type" className="mt-1.5 h-9 bg-secondary/50 border-border text-sm">
+                      <SelectTrigger id="memory" className="bg-secondary/50 border-border">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -285,10 +282,18 @@ export function AgentBuilder() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex items-center justify-between pt-1">
-                    <Label htmlFor="human-loop" className="text-xs">Human-in-the-Loop</Label>
+                  <div className="flex items-center justify-between py-2 border-t border-border">
+                    <Label htmlFor="streaming" className="text-xs text-muted-foreground">Enable Streaming</Label>
                     <Switch
-                      id="human-loop"
+                      id="streaming"
+                      checked={streamingEnabled}
+                      onCheckedChange={setStreamingEnabled}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-t border-border">
+                    <Label htmlFor="human" className="text-xs text-muted-foreground">Human-in-the-Loop</Label>
+                    <Switch
+                      id="human"
                       checked={humanInLoop}
                       onCheckedChange={setHumanInLoop}
                     />
@@ -297,121 +302,85 @@ export function AgentBuilder() {
               </Card>
             </div>
 
-            {/* Execution Controls */}
-            <Card className="p-4 bg-card/50 backdrop-blur-sm border-border">
-              <div className="flex items-center gap-2 mb-3">
-                <GitBranch className="w-4 h-4 text-primary" />
-                <h2 className="text-sm font-semibold">Execution Controls</h2>
+            {/* Tools */}
+            <Card className="p-4 bg-card border-border">
+              <div className="flex items-center gap-2 mb-4">
+                <GitBranch className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Tools</h3>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div>
-                  <Label htmlFor="max-iterations" className="text-xs">Max Iterations</Label>
-                  <Input
-                    id="max-iterations"
-                    type="number"
-                    min="1"
-                    value={maxIterations}
-                    onChange={(e) => setMaxIterations(e.target.value)}
-                    className="mt-1.5 h-9 bg-secondary/50 border-border text-sm"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="recursion-limit" className="text-xs">Recursion Limit</Label>
-                  <Input
-                    id="recursion-limit"
-                    type="number"
-                    min="1"
-                    value={recursionLimit}
-                    onChange={(e) => setRecursionLimit(e.target.value)}
-                    className="mt-1.5 h-9 bg-secondary/50 border-border text-sm"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="timeout" className="text-xs">Timeout (sec)</Label>
-                  <Input
-                    id="timeout"
-                    type="number"
-                    min="1"
-                    value={timeoutSeconds}
-                    onChange={(e) => setTimeoutSeconds(e.target.value)}
-                    className="mt-1.5 h-9 bg-secondary/50 border-border text-sm"
-                  />
-                </div>
-                <div className="flex flex-col justify-between">
-                  <Label htmlFor="streaming" className="text-xs mb-1">Streaming</Label>
-                  <div className="flex items-center h-9">
-                    <Switch
-                      id="streaming"
-                      checked={streamingEnabled}
-                      onCheckedChange={setStreamingEnabled}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {AVAILABLE_TOOLS.map(tool => (
+                  <div
+                    key={tool.id}
+                    className="flex items-center space-x-2 p-2.5 rounded-md border border-border bg-secondary/30 hover:bg-secondary/50 transition-colors cursor-pointer"
+                    onClick={() => handleToolToggle(tool.id)}
+                  >
+                    <Checkbox
+                      id={tool.id}
+                      checked={selectedTools.includes(tool.id)}
+                      onCheckedChange={() => handleToolToggle(tool.id)}
                     />
+                    <label htmlFor={tool.id} className="text-xs font-medium cursor-pointer flex-1">
+                      {tool.label}
+                    </label>
                   </div>
-                </div>
+                ))}
               </div>
             </Card>
           </div>
 
-          {/* Right Sidebar - Summary & Generate */}
-          <div className="lg:col-span-4 space-y-4">
-            {/* Configuration Summary */}
-            <Card className="p-4 bg-card/50 backdrop-blur-sm border-border">
-              <h3 className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-2">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                Configuration Summary
-              </h3>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between py-1.5 border-b border-border/50">
-                  <span className="text-muted-foreground">Architecture</span>
-                  <span className="font-medium">{AGENT_TYPES.find(t => t.value === agentType)?.label}</span>
+          {/* Right Panel - Configuration */}
+          <div className="space-y-4">
+            <Card className="p-4 bg-card border-border">
+              <h3 className="text-sm font-medium mb-4">Agent Configuration</h3>
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="agent-name" className="text-xs text-muted-foreground mb-2 block">Agent Name</Label>
+                  <Input
+                    id="agent-name"
+                    placeholder="ResearchAssistant"
+                    value={agentName}
+                    onChange={(e) => setAgentName(e.target.value)}
+                    className="bg-secondary/50 border-border"
+                  />
                 </div>
-                <div className="flex justify-between py-1.5 border-b border-border/50">
-                  <span className="text-muted-foreground">Provider</span>
-                  <span className="font-medium capitalize">{llmProvider}</span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-border/50">
-                  <span className="text-muted-foreground">Model</span>
-                  <span className="font-medium">{llmModel}</span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-border/50">
-                  <span className="text-muted-foreground">Temperature</span>
-                  <span className="font-medium">{temperature[0].toFixed(1)}</span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-border/50">
-                  <span className="text-muted-foreground">Tools</span>
-                  <span className="font-medium">{selectedTools.length} enabled</span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-border/50">
-                  <span className="text-muted-foreground">Memory</span>
-                  <span className="font-medium text-xs">{MEMORY_TYPES.find(m => m.value === memoryType)?.label}</span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-border/50">
-                  <span className="text-muted-foreground">Max Iterations</span>
-                  <span className="font-medium">{maxIterations}</span>
-                </div>
-                <div className="flex justify-between py-1.5 border-b border-border/50">
-                  <span className="text-muted-foreground">Human Approval</span>
-                  <span className="font-medium">{humanInLoop ? "Enabled" : "Disabled"}</span>
-                </div>
-                <div className="flex justify-between py-1.5">
-                  <span className="text-muted-foreground">Streaming</span>
-                  <span className="font-medium">{streamingEnabled ? "Enabled" : "Disabled"}</span>
+                
+                <div className="pt-3 border-t border-border">
+                  <h4 className="text-xs font-medium text-muted-foreground mb-3">Summary</h4>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Provider</span>
+                      <span className="font-medium capitalize">{llmProvider}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Model</span>
+                      <span className="font-medium">{llmModel}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Architecture</span>
+                      <span className="font-medium">{AGENT_TYPES.find(t => t.value === agentType)?.label}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tools</span>
+                      <span className="font-medium">{selectedTools.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Temperature</span>
+                      <span className="font-medium">{temperature[0].toFixed(1)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Memory</span>
+                      <span className="font-medium text-[10px]">{memoryType}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </Card>
 
-            {/* Generate Button */}
-            <Card className="p-4 bg-card/50 backdrop-blur-sm border-border">
-              <Button
-                variant="hero"
-                size="lg"
-                className="w-full"
-                onClick={handleGenerateAgent}
-              >
-                <Sparkles className="w-4 h-4 mr-2" />
-                Generate Agent
-              </Button>
-              <p className="text-xs text-muted-foreground text-center mt-3">
-                Click to generate your LangGraph agent with the configured settings
+            <Card className="p-4 bg-muted/30 border-border">
+              <h4 className="text-xs font-medium text-muted-foreground mb-2">Ready to Build?</h4>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Your agent will be generated with the selected configuration. All settings can be adjusted after creation.
               </p>
             </Card>
           </div>
