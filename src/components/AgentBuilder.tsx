@@ -16,16 +16,29 @@ const LLM_PROVIDERS = [
   { value: "openai", label: "OpenAI" },
   { value: "anthropic", label: "Anthropic" },
   { value: "google", label: "Google" },
+  { value: "groq", label: "Groq" },
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "together", label: "Together AI" },
+  { value: "fireworks", label: "Fireworks AI" },
   { value: "cohere", label: "Cohere" },
   { value: "meta", label: "Meta" },
   { value: "mistral", label: "Mistral AI" },
 ];
 
 const MODELS = {
-  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"],
+  openai: [
+    "gpt-4o",
+    "gpt-4o-mini", 
+    "gpt-4-turbo",
+    "gpt-4",
+    "gpt-3.5-turbo",
+    "o1-preview",
+    "o1-mini"
+  ],
   anthropic: [
     "claude-sonnet-4-5",
     "claude-opus-4-1",
+    "claude-3-7-sonnet",
     "claude-3-5-sonnet",
     "claude-3-5-haiku",
     "claude-3-opus",
@@ -37,11 +50,65 @@ const MODELS = {
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
     "gemini-1.5-pro",
-    "gemini-1.5-flash"
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b"
   ],
-  cohere: ["command-r-plus", "command-r", "command", "command-light"],
-  meta: ["llama-3.3-70b", "llama-3.1-405b", "llama-3.1-70b", "llama-3.1-8b"],
-  mistral: ["mistral-large", "mistral-medium", "mistral-small", "mixtral-8x7b"],
+  groq: [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-70b-versatile",
+    "llama-3.1-8b-instant",
+    "mixtral-8x7b-32768",
+    "gemma-2-9b-it",
+    "llama-guard-3-8b"
+  ],
+  openrouter: [
+    "anthropic/claude-sonnet-4-5",
+    "openai/gpt-4o",
+    "google/gemini-2.5-pro",
+    "meta-llama/llama-3.3-70b-instruct",
+    "anthropic/claude-3-5-haiku",
+    "deepseek/deepseek-chat",
+    "qwen/qwen-2.5-72b-instruct",
+    "mistralai/mistral-large"
+  ],
+  together: [
+    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
+    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo",
+    "mistralai/Mixtral-8x22B-Instruct-v0.1",
+    "deepseek-ai/DeepSeek-V3",
+    "Qwen/Qwen2.5-72B-Instruct-Turbo"
+  ],
+  fireworks: [
+    "accounts/fireworks/models/llama-v3p3-70b-instruct",
+    "accounts/fireworks/models/llama-v3p1-405b-instruct",
+    "accounts/fireworks/models/mixtral-8x22b-instruct",
+    "accounts/fireworks/models/qwen2p5-72b-instruct",
+    "accounts/fireworks/models/deepseek-v3"
+  ],
+  cohere: [
+    "command-r-plus",
+    "command-r",
+    "command",
+    "command-light",
+    "command-r-08-2024",
+    "command-r-plus-08-2024"
+  ],
+  meta: [
+    "llama-3.3-70b",
+    "llama-3.2-90b-vision",
+    "llama-3.1-405b",
+    "llama-3.1-70b",
+    "llama-3.1-8b"
+  ],
+  mistral: [
+    "mistral-large-2411",
+    "mistral-large-2407",
+    "mistral-medium",
+    "mistral-small",
+    "mixtral-8x7b",
+    "pixtral-large-2411"
+  ],
 };
 
 const AGENT_TYPES = [
