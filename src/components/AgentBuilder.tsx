@@ -8,8 +8,9 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, Cpu, Database, GitBranch, Settings2 } from "lucide-react";
+import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const LLM_PROVIDERS = [
   { value: "openai", label: "OpenAI" },
@@ -135,9 +136,13 @@ export function AgentBuilder() {
             <h1 className="text-2xl font-semibold text-foreground">Playground</h1>
             <p className="text-sm text-muted-foreground mt-1">Configure and test your LangGraph agent</p>
           </div>
-          <Button variant="default" size="default" onClick={handleGenerateAgent}>
-            Generate Agent
-          </Button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Button variant="default" size="default" onClick={handleGenerateAgent}>
+              <Sparkles className="w-4 h-4 mr-2" />
+              Generate Agent
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -145,7 +150,10 @@ export function AgentBuilder() {
           <div className="lg:col-span-2 space-y-6">
             {/* Model Selection - Clean horizontal layout */}
             <div className="border border-border rounded-lg p-5 bg-card">
-              <h3 className="text-sm font-medium mb-4">Model</h3>
+              <div className="flex items-center gap-2 mb-4">
+                <Cpu className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Model</h3>
+              </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <Label htmlFor="provider" className="text-xs text-muted-foreground mb-2 block">Provider</Label>
@@ -180,9 +188,12 @@ export function AgentBuilder() {
                 </div>
 
                 <div>
-                  <Label htmlFor="temperature" className="text-xs text-muted-foreground mb-2 block">
-                    Temperature: {temperature[0].toFixed(1)}
-                  </Label>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Thermometer className="w-3.5 h-3.5 text-muted-foreground" />
+                    <Label htmlFor="temperature" className="text-xs text-muted-foreground">
+                      Temperature: {temperature[0].toFixed(1)}
+                    </Label>
+                  </div>
                   <Slider
                     id="temperature"
                     min={0}
@@ -198,7 +209,10 @@ export function AgentBuilder() {
 
             {/* System Prompt */}
             <div className="border border-border rounded-lg p-5 bg-card">
-              <Label htmlFor="system-prompt" className="text-sm font-medium mb-3 block">System Instructions</Label>
+              <div className="flex items-center gap-2 mb-3">
+                <FileText className="w-4 h-4 text-muted-foreground" />
+                <Label htmlFor="system-prompt" className="text-sm font-medium">System Instructions</Label>
+              </div>
               <Textarea
                 id="system-prompt"
                 placeholder="You are a helpful AI assistant that..."
@@ -210,10 +224,16 @@ export function AgentBuilder() {
 
             {/* Agent Configuration */}
             <div className="border border-border rounded-lg p-5 bg-card">
-              <h3 className="text-sm font-medium mb-4">Agent Configuration</h3>
+              <div className="flex items-center gap-2 mb-4">
+                <Settings2 className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Agent Configuration</h3>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="agent-name" className="text-xs text-muted-foreground mb-2 block">Agent Name</Label>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Box className="w-3.5 h-3.5 text-muted-foreground" />
+                    <Label htmlFor="agent-name" className="text-xs text-muted-foreground">Agent Name</Label>
+                  </div>
                   <Input
                     id="agent-name"
                     placeholder="ResearchAssistant"
@@ -223,7 +243,10 @@ export function AgentBuilder() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="agent-type" className="text-xs text-muted-foreground mb-2 block">Architecture</Label>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Layers className="w-3.5 h-3.5 text-muted-foreground" />
+                    <Label htmlFor="agent-type" className="text-xs text-muted-foreground">Architecture</Label>
+                  </div>
                   <Select value={agentType} onValueChange={setAgentType}>
                     <SelectTrigger id="agent-type" className="h-9 bg-background">
                       <SelectValue />
@@ -242,7 +265,10 @@ export function AgentBuilder() {
 
             {/* Tools */}
             <div className="border border-border rounded-lg p-5 bg-card">
-              <h3 className="text-sm font-medium mb-4">Tools</h3>
+              <div className="flex items-center gap-2 mb-4">
+                <GitBranch className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Tools</h3>
+              </div>
               <div className="grid grid-cols-3 gap-3">
                 {AVAILABLE_TOOLS.map(tool => (
                   <div
@@ -267,7 +293,10 @@ export function AgentBuilder() {
           {/* Right Panel - Advanced Settings */}
           <div className="space-y-6">
             <div className="border border-border rounded-lg p-5 bg-card">
-              <h3 className="text-sm font-medium mb-4">Execution Settings</h3>
+              <div className="flex items-center gap-2 mb-4">
+                <Hash className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Execution Settings</h3>
+              </div>
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="max-iter" className="text-xs text-muted-foreground mb-2 block">Max Iterations</Label>
@@ -295,7 +324,10 @@ export function AgentBuilder() {
             </div>
 
             <div className="border border-border rounded-lg p-5 bg-card">
-              <h3 className="text-sm font-medium mb-4">Memory & State</h3>
+              <div className="flex items-center gap-2 mb-4">
+                <Database className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">Memory & State</h3>
+              </div>
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="memory" className="text-xs text-muted-foreground mb-2 block">Checkpoint Storage</Label>
