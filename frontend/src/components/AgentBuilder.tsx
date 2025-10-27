@@ -8,7 +8,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText } from "lucide-react";
+import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText, Key } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -139,6 +139,7 @@ export function AgentBuilder() {
   const [agentType, setAgentType] = useState("react");
   const [llmProvider, setLlmProvider] = useState("anthropic");
   const [llmModel, setLlmModel] = useState("claude-sonnet-4-5");
+  const [apiKey, setApiKey] = useState("");
   const [temperature, setTemperature] = useState([0.7]);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
@@ -176,6 +177,7 @@ export function AgentBuilder() {
       agentType,
       llmProvider,
       llmModel,
+      apiKey,
       temperature: temperature[0],
       systemPrompt,
       tools: selectedTools,
@@ -271,6 +273,21 @@ export function AgentBuilder() {
                     className="mt-2"
                   />
                 </div>
+              </div>
+              
+              <div className="mt-4">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Key className="w-3.5 h-3.5 text-muted-foreground" />
+                  <Label htmlFor="api-key" className="text-xs text-muted-foreground">API Key</Label>
+                </div>
+                <Input
+                  id="api-key"
+                  type="password"
+                  placeholder="sk-..."
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="h-9 bg-background"
+                />
               </div>
             </div>
 
