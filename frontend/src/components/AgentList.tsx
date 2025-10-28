@@ -101,48 +101,80 @@ export function AgentList({ onAgentDeleted }: AgentListProps) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Your Agents</h2>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between border-b pb-4">
+        <div>
+          <h2 className="text-xl font-semibold tracking-tight">Your Agents</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            {agents.length} {agents.length === 1 ? 'agent' : 'agents'} configured
+          </p>
+        </div>
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
           onClick={handleRefresh}
           disabled={refreshing}
+          className="gap-2"
         >
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Refresh</span>
         </Button>
       </div>
       {agents.length === 0 ? (
-        <Card className="p-6 text-center">
-          <p className="text-muted-foreground">No agents created yet. Create your first agent above!</p>
+        <Card className="border-dashed">
+          <div className="p-12 text-center">
+            <div className="w-16 h-16 rounded-full bg-muted mx-auto mb-4 flex items-center justify-center">
+              <Bot className="w-8 h-8 text-muted-foreground" />
+            </div>
+            <p className="text-muted-foreground text-sm">No agents created yet. Create your first agent above!</p>
+          </div>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {agents.map((agent) => (
-            <Card key={agent.agent_id} className="p-4 flex flex-col">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-                    <Bot className="w-4 h-4 text-primary-foreground" />
+            <Card 
+              key={agent.agent_id} 
+              className="group hover:shadow-lg transition-all duration-200 hover:border-primary/50"
+            >
+              <div className="p-5 flex flex-col h-full">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-start gap-3 flex-1">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center flex-shrink-0 shadow-sm">
+                      <Bot className="w-5 h-5 text-primary-foreground" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-base truncate group-hover:text-primary transition-colors">
+                        {agent.name}
+                      </h3>
+                      <p className="text-xs text-muted-foreground capitalize mt-0.5">
+                        {agent.agent_type}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-medium">{agent.name}</h3>
-                    <p className="text-xs text-muted-foreground capitalize">{agent.agent_type}</p>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDeleteAgent(agent.agent_id, agent.name)}
+                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 -mt-1 -mr-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+                
+                <div className="mt-auto space-y-2 pt-3 border-t">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-medium text-muted-foreground">Model:</span>
+                    <span className="truncate text-foreground">
+                      {agent.llm_provider} / {agent.llm_model}
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2 text-xs">
+                    <span className="font-medium text-muted-foreground whitespace-nowrap">Tools:</span>
+                    <span className="truncate text-foreground">
+                      {agent.tools.length > 0 ? agent.tools.join(", ") : "None"}
+                    </span>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleDeleteAgent(agent.agent_id, agent.name)}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-              <div className="mt-3 text-xs text-muted-foreground">
-                <p className="truncate">{agent.llm_provider} - {agent.llm_model}</p>
-                <p className="truncate mt-1">Tools: {agent.tools.length > 0 ? agent.tools.join(", ") : "None"}</p>
               </div>
             </Card>
           ))}
