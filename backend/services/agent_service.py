@@ -123,9 +123,15 @@ class AgentService:
             # Create the LangGraph agent based on configuration
             langgraph_agent = self._create_langgraph_agent(agent)
             
-            # Execute the agent
+            # Execute the agent with the appropriate input format based on agent type
             config = {"configurable": {"thread_id": thread_id or agent_id}}
-            response = langgraph_agent.invoke({"messages": [HumanMessage(content=input_text)]}, config)
+            
+            if agent.agent_type == "react":
+                # ReAct agents expect messages format
+                response = langgraph_agent.invoke({"messages": [HumanMessage(content=input_text)]}, config)
+            else:
+                # Other agents (plan-execute, reflection, custom) expect input format
+                response = langgraph_agent.invoke({"input": input_text}, config)
             
             # Extract the final response
             # Handle different response formats
@@ -133,6 +139,15 @@ class AgentService:
                 if "messages" in response and len(response["messages"]) > 0:
                     # Standard format with messages key
                     final_message = response["messages"][-1]
+                elif "agent_result" in response:
+                    # Custom agent result
+                    final_message = response["agent_result"]
+                elif "agent_revision" in response:
+                    # Reflection agent result
+                    final_message = response["agent_revision"]
+                elif "response" in response:
+                    # Plan-execute agent result
+                    final_message = response["response"]
                 else:
                     # Direct response in dict
                     final_message = response
@@ -338,42 +353,44 @@ class AgentService:
         
         class PlanExecuteState(TypedDict):
             input: str
-            plan: str
+            agent_plan: str
             past_steps: Annotated[Sequence[str], add_messages]
             response: str
         
         # Planner node - creates a plan
         def planner_node(state: PlanExecuteState):
             """Create a plan for executing the user request"""
-            planner_prompt = PromptTemplate.from_template("""You are an expert at creating plans for complex tasks.
+            system_prompt = agent_config.system_prompt or "You are an expert at creating plans for complex tasks."
+            planner_prompt = PromptTemplate.from_template(f"""{system_prompt}
             
 For the user request, create a detailed plan with steps. Each step should be a single actionable item.
 
-User Request: {input}
+User Request: {{input}}
 
 Plan:""")
             
             chain = planner_prompt | llm | StrOutputParser()
             plan = chain.invoke({"input": state["input"]})
-            return {"plan": plan}
+            return {"agent_plan": plan}
         
         # Executor node - executes the plan
         def executor_node(state: PlanExecuteState):
             """Execute the plan steps"""
-            executor_prompt = PromptTemplate.from_template("""You are an expert at executing plans.
+            system_prompt = agent_config.system_prompt or "You are an expert at executing plans."
+            executor_prompt = PromptTemplate.from_template(f"""{system_prompt}
             
 Here is the plan to execute:
-{plan}
+{{agent_plan}}
 
 Execute the next step and return the result.
 
-Previous steps: {past_steps}
+Previous steps: {{past_steps}}
 
 Next step result:""")
             
             chain = executor_prompt | llm | StrOutputParser()
             result = chain.invoke({
-                "plan": state["plan"],
+                "agent_plan": state["agent_plan"],
                 "past_steps": "\n".join(state["past_steps"]) if state["past_steps"] else "None"
             })
             
@@ -402,64 +419,67 @@ Next step result:""")
         
         class ReflectionState(TypedDict):
             input: str
-            draft: str
-            critique: str
-            revision: str
+            agent_draft: str
+            agent_critique: str
+            agent_revision: str
         
         # Agent node - generates initial response
         def agent_node(state: ReflectionState):
             """Generate initial response"""
-            agent_prompt = PromptTemplate.from_template("""You are a helpful AI assistant.
+            system_prompt = agent_config.system_prompt or "You are a helpful AI assistant."
+            agent_prompt = PromptTemplate.from_template(f"""{system_prompt}
             
 Provide a response to the user request.
 
-User Request: {input}
+User Request: {{input}}
 
 Response:""")
             
             chain = agent_prompt | llm | StrOutputParser()
             draft = chain.invoke({"input": state["input"]})
-            return {"draft": draft}
+            return {"agent_draft": draft}
         
         # Critique node - evaluates the response
         def critique_node(state: ReflectionState):
             """Critique the initial response"""
-            critique_prompt = PromptTemplate.from_template("""You are an expert reviewer.
+            system_prompt = agent_config.system_prompt or "You are an expert reviewer."
+            critique_prompt = PromptTemplate.from_template(f"""{system_prompt}
             
 Review the following response for quality, accuracy, and completeness. Point out any issues or improvements.
 
-Response: {draft}
+Response: {{agent_draft}}
 
-User Request: {input}
+User Request: {{input}}
 
 Critique:""")
             
             chain = critique_prompt | llm | StrOutputParser()
-            critique = chain.invoke({"draft": state["draft"], "input": state["input"]})
-            return {"critique": critique}
+            critique = chain.invoke({"agent_draft": state["agent_draft"], "input": state["input"]})
+            return {"agent_critique": critique}
         
         # Revision node - improves based on critique
         def revision_node(state: ReflectionState):
             """Revise the response based on critique"""
-            revision_prompt = PromptTemplate.from_template("""You are an expert editor.
+            system_prompt = agent_config.system_prompt or "You are an expert editor."
+            revision_prompt = PromptTemplate.from_template(f"""{system_prompt}
             
 Improve the response based on the critique.
 
-Original Response: {draft}
+Original Response: {{agent_draft}}
 
-Critique: {critique}
+Critique: {{agent_critique}}
 
-User Request: {input}
+User Request: {{input}}
 
 Improved Response:""")
             
             chain = revision_prompt | llm | StrOutputParser()
             revision = chain.invoke({
-                "draft": state["draft"], 
-                "critique": state["critique"],
+                "agent_draft": state["agent_draft"], 
+                "agent_critique": state["agent_critique"],
                 "input": state["input"]
             })
-            return {"revision": revision}
+            return {"agent_revision": revision}
         
         # Create the workflow
         workflow = StateGraph(ReflectionState)
@@ -486,61 +506,64 @@ Improved Response:""")
         
         class CustomAgentState(TypedDict):
             input: str
-            analysis: str
-            action: str
-            result: str
+            agent_analysis: str
+            agent_action: str
+            agent_result: str
         
         # Analysis node - analyzes the request
         def analysis_node(state: CustomAgentState):
             """Analyze the user request and determine the approach"""
-            analysis_prompt = PromptTemplate.from_template("""You are an expert problem analyzer.
+            system_prompt = agent_config.system_prompt or "You are a helpful assistant."
+            analysis_prompt = PromptTemplate.from_template(f"""{system_prompt}
             
-Analyze the following user request and determine the best approach to address it.
+You are an expert problem analyzer. Analyze the following user request and determine the best approach to address it.
 
-User Request: {input}
+User Request: {{input}}
 
 Analysis:""")
             
             chain = analysis_prompt | llm | StrOutputParser()
             analysis = chain.invoke({"input": state["input"]})
-            return {"analysis": analysis}
+            return {"agent_analysis": analysis}
         
         # Action node - takes action based on analysis
         def action_node(state: CustomAgentState):
             """Take action based on analysis"""
-            action_prompt = PromptTemplate.from_template("""You are an expert problem solver.
+            system_prompt = agent_config.system_prompt or "You are a helpful assistant."
+            action_prompt = PromptTemplate.from_template(f"""{system_prompt}
             
-Based on the analysis, determine the best action to take to address the user request.
+You are an expert problem solver. Based on the analysis, determine the best action to take to address the user request.
 
-Analysis: {analysis}
+Analysis: {{agent_analysis}}
 
-User Request: {input}
+User Request: {{input}}
 
 Action:""")
             
             chain = action_prompt | llm | StrOutputParser()
-            action = chain.invoke({"analysis": state["analysis"], "input": state["input"]})
-            return {"action": action}
+            action = chain.invoke({"agent_analysis": state["agent_analysis"], "input": state["input"]})
+            return {"agent_action": action}
         
         # Result formatter node - formats the result
         def result_node(state: CustomAgentState):
             """Format the final result"""
-            result_prompt = PromptTemplate.from_template("""You are an expert at providing clear responses.
+            system_prompt = agent_config.system_prompt or "You are a helpful assistant."
+            result_prompt = PromptTemplate.from_template(f"""{system_prompt}
             
 Provide a clear, comprehensive response to the user's request based on the action taken.
 
-Action Taken: {action}
+Action Taken: {{agent_action}}
 
-User Request: {input}
+User Request: {{input}}
 
 Final Response:""")
             
             chain = result_prompt | llm | StrOutputParser()
             result = chain.invoke({
-                "action": state["action"], 
+                "agent_action": state["agent_action"], 
                 "input": state["input"]
             })
-            return {"result": result}
+            return {"agent_result": result}
         
         # Create the workflow
         workflow = StateGraph(CustomAgentState)
