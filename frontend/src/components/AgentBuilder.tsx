@@ -481,9 +481,7 @@ export function AgentBuilder() {
             </div>
 
             {/* Agent List */}
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <AgentList />
-            </div>
+            {/* Removed AgentList component as requested - it will be moved to the Chat page */}
           </div>
         </div>
       </div>

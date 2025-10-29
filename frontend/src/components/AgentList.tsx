@@ -41,13 +41,26 @@ export function AgentList({ onAgentDeleted }: AgentListProps) {
       const response = await fetch('http://localhost:8000/api/v1/agents');
       if (response.ok) {
         const data = await response.json();
+        console.log("Fetched agents:", data); // Debug log
         setAgents(data);
+        // Additional debug log to check if agents have names
+        if (data.length > 0) {
+          console.log("First agent:", data[0]);
+        }
+      } else {
+        console.error("Failed to fetch agents, status:", response.status);
+        // Show error to user
+        toast({
+          title: "Error",
+          description: `Failed to load agents. Status: ${response.status}`,
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error("Error fetching agents:", error);
       toast({
         title: "Error",
-        description: "Failed to load agents",
+        description: "Failed to load agents. Please check if the backend is running.",
         variant: "destructive",
       });
     } finally {
@@ -134,20 +147,20 @@ export function AgentList({ onAgentDeleted }: AgentListProps) {
           {agents.map((agent) => (
             <Card 
               key={agent.agent_id} 
-              className="group hover:shadow-lg transition-all duration-200 hover:border-primary/50 overflow-hidden flex flex-col"
+              className="group hover:shadow-lg transition-all duration-200 hover:border-primary/50 overflow-hidden h-full"
             >
-              <div className="p-5 flex flex-col gap-4 min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2 min-w-0">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center flex-shrink-0 shadow-sm">
-                      <Bot className="w-5 h-5 text-primary-foreground" />
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4 min-w-0 flex-1">
+                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center flex-shrink-0 shadow-sm">
+                      <Bot className="w-6 h-6 text-primary-foreground" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-base group-hover:text-primary transition-colors break-words line-clamp-2">
-                        {agent.name}
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold text-lg group-hover:text-primary transition-colors truncate">
+                        {agent.name || "Unnamed Agent"}
                       </h3>
-                      <p className="text-xs text-muted-foreground capitalize mt-0.5 truncate">
-                        {agent.agent_type}
+                      <p className="text-sm text-muted-foreground capitalize mt-1 truncate">
+                        {agent.agent_type || "Unknown Type"}
                       </p>
                     </div>
                   </div>
@@ -155,25 +168,10 @@ export function AgentList({ onAgentDeleted }: AgentListProps) {
                     variant="ghost"
                     size="icon"
                     onClick={() => handleDeleteAgent(agent.agent_id, agent.name)}
-                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 -mt-1 -mr-2 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-5 h-5" />
                   </Button>
-                </div>
-                
-                <div className="space-y-2.5 pt-3 border-t min-w-0">
-                  <div className="flex items-start gap-2 text-xs min-w-0">
-                    <span className="font-medium text-muted-foreground flex-shrink-0 pt-0.5">Model:</span>
-                    <span className="text-foreground min-w-0 break-words leading-relaxed">
-                      {agent.llm_provider} / {agent.llm_model}
-                    </span>
-                  </div>
-                  <div className="flex items-start gap-2 text-xs min-w-0">
-                    <span className="font-medium text-muted-foreground whitespace-nowrap flex-shrink-0 pt-0.5">Tools:</span>
-                    <span className="text-foreground min-w-0 break-words leading-relaxed">
-                      {agent.tools.length > 0 ? agent.tools.join(", ") : "None"}
-                    </span>
-                  </div>
                 </div>
               </div>
             </Card>
