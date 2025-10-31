@@ -29,7 +29,6 @@ async def test_agent_service():
         system_prompt="You are a helpful assistant",
         tools=["tavily_search"],
         max_iterations=15,
-        memory_type="memory-saver",
         streaming_enabled=True,
         human_in_loop=False,
         recursion_limit=25

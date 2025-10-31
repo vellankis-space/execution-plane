@@ -20,7 +20,6 @@ class AgentResponse(BaseModel):
     system_prompt: Optional[str] = ""
     tools: List[str] = []
     max_iterations: int
-    memory_type: str
     streaming_enabled: bool
     human_in_loop: bool
     recursion_limit: int
@@ -84,8 +83,8 @@ async def execute_agent(agent_id: str, request: AgentExecutionRequest, db: Sessi
     """Execute an agent with input"""
     try:
         agent_service = AgentService(db)
-        response = await agent_service.execute_agent(agent_id, request.input, request.thread_id)
-        return AgentExecutionResponse(response=response, thread_id=request.thread_id or agent_id)
+        response = await agent_service.execute_agent(agent_id, request.input)
+        return AgentExecutionResponse(response=response)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -95,8 +94,8 @@ async def chat_with_agent(agent_id: str, request: AgentChatRequest, db: Session 
     """Chat with an agent"""
     try:
         agent_service = AgentService(db)
-        response = await agent_service.chat_with_agent(agent_id, request.message, request.thread_id)
-        return AgentExecutionResponse(response=response, thread_id=request.thread_id or agent_id)
+        response = await agent_service.chat_with_agent(agent_id, request.message)
+        return AgentExecutionResponse(response=response)
     except ValueError as e:
         # Handle validation errors (like API key issues) with 400 status
         raise HTTPException(status_code=400, detail=str(e))

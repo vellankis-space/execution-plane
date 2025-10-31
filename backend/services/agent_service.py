@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
-from langgraph.checkpoint.memory import MemorySaver
+
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
@@ -20,8 +20,6 @@ from models.agent import Agent as AgentModel
 from schemas.agent import AgentCreate, AgentInDB
 from core.config import settings
 
-# Global MemorySaver instance for all agents
-_memory_saver = MemorySaver()
 
 class AgentService:
     def __init__(self, db: Session):
@@ -100,10 +98,10 @@ class AgentService:
             return True
         return False
 
-    async def chat_with_agent(self, agent_id: str, message: str, thread_id: Optional[str] = None) -> str:
+    async def chat_with_agent(self, agent_id: str, message: str) -> str:
         """Chat with an agent"""
         try:
-            return await self.execute_agent(agent_id, message, thread_id)
+            return await self.execute_agent(agent_id, message)
         except Exception as e:
             # Log the error for debugging
             print(f"Error chatting with agent {agent_id}: {str(e)}")
@@ -117,7 +115,7 @@ class AgentService:
             else:
                 return f"Error communicating with the agent: {str(e)}"
     
-    async def execute_agent(self, agent_id: str, input_text: str, thread_id: Optional[str] = None) -> str:
+    async def execute_agent(self, agent_id: str, input_text: str) -> str:
         """Execute an agent with the given input"""
         agent = await self.get_agent(agent_id)
         if not agent:
@@ -125,18 +123,15 @@ class AgentService:
         
         try:
             # Create the LangGraph agent based on configuration
-            # We don't cache agents because memory persistence is handled by the checkpointer with thread_id
             langgraph_agent = self._create_langgraph_agent(agent)
             
             # Execute the agent with the appropriate input format based on agent type
-            config = {"configurable": {"thread_id": thread_id or agent_id}}
-            
             if agent.agent_type == "react":
                 # ReAct agents expect messages format
-                response = langgraph_agent.invoke({"messages": [HumanMessage(content=input_text)]}, config)
+                response = langgraph_agent.invoke({"messages": [HumanMessage(content=input_text)]})
             else:
                 # Other agents (plan-execute, reflection, custom) expect input format
-                response = langgraph_agent.invoke({"input": input_text}, config)
+                response = langgraph_agent.invoke({"input": input_text})
             
             # Extract the final response
             # Handle different response formats
@@ -350,8 +345,8 @@ class AgentService:
             
             # Create the ReAct agent with the LLM and tools
             react_agent = create_react_agent(llm, tools)
-            # Compile with the shared checkpointer for memory management
-            return react_agent.compile(checkpointer=_memory_saver)
+            # Return the already compiled agent
+            return react_agent
         else:
             # For LLMs that don't support tools (like FakeListLLM), create a simple chat agent
             from langgraph.graph import StateGraph, START
@@ -379,8 +374,8 @@ class AgentService:
             workflow.add_edge(START, "call_model")
             workflow.add_edge("call_model", END)
             
-            # Compile with the shared checkpointer for memory management
-            return workflow.compile(checkpointer=_memory_saver)
+            # Compile without checkpointer
+            return workflow.compile()
     
     def _create_plan_execute_agent(self, llm, agent_config):
         """Create a generic Plan & Execute agent for complex multi-step tasks"""
@@ -448,8 +443,8 @@ Next step result:""")
         workflow.add_edge("planner", "executor")
         workflow.add_edge("executor", END)
         
-        # Compile with the shared checkpointer for memory management
-        return workflow.compile(checkpointer=_memory_saver)
+        # Compile without checkpointer
+        return workflow.compile()
     
     def _create_reflection_agent(self, llm, agent_config):
         """Create a generic Reflection agent that improves its responses through self-evaluation"""
@@ -536,8 +531,8 @@ Improved Response:""")
         workflow.add_edge("critique", "revision")
         workflow.add_edge("revision", END)
         
-        # Compile with the shared checkpointer for memory management
-        return workflow.compile(checkpointer=_memory_saver)
+        # Compile without checkpointer
+        return workflow.compile()
     
     def _create_custom_agent(self, llm, agent_config):
         """Create a flexible custom agent graph for specialized workflows"""
@@ -621,5 +616,5 @@ Final Response:""")
         workflow.add_edge("action", "result")
         workflow.add_edge("result", END)
         
-        # Compile with the shared checkpointer for memory management
-        return workflow.compile(checkpointer=_memory_saver)
+        # Compile without checkpointer
+        return workflow.compile()

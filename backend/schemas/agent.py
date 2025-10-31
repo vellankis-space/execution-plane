@@ -11,7 +11,7 @@ class AgentBase(BaseModel):
     system_prompt: Optional[str] = ""
     tools: List[str] = []
     max_iterations: int
-    memory_type: str
+    memory_type: Optional[str] = None  # Deprecated field for backward compatibility
     streaming_enabled: bool
     human_in_loop: bool
     recursion_limit: int
@@ -30,13 +30,10 @@ class AgentInDB(AgentBase):
 
 class AgentExecutionRequest(BaseModel):
     input: str
-    thread_id: Optional[str] = None
 
 class AgentChatRequest(BaseModel):
     message: str
-    thread_id: Optional[str] = None
 
 
 class AgentExecutionResponse(BaseModel):
     response: str
-    thread_id: str

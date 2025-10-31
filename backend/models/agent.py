@@ -15,7 +15,7 @@ class Agent(Base):
     system_prompt = Column(Text)
     tools = Column(JSON)  # List of tools
     max_iterations = Column(Integer)
-    memory_type = Column(String)  # memory-saver, postgres, redis, none
+    memory_type = Column(String)  # memory-saver, postgres, redis, none (deprecated)
     streaming_enabled = Column(Boolean, default=True)
     human_in_loop = Column(Boolean, default=False)
     recursion_limit = Column(Integer)
