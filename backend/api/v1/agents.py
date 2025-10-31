@@ -16,7 +16,7 @@ class AgentResponse(BaseModel):
     agent_type: str
     llm_provider: str
     llm_model: str
-    temperature: float
+    temperature: float  # Changed from int to float to match the model
     system_prompt: Optional[str] = ""
     tools: List[str] = []
     max_iterations: int

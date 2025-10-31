@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON, Float
 from sqlalchemy.sql import func
 from core.database import Base
 
@@ -11,7 +11,7 @@ class Agent(Base):
     agent_type = Column(String)  # react, plan-execute, reflection, custom
     llm_provider = Column(String)  # openai, anthropic, google, etc.
     llm_model = Column(String)
-    temperature = Column(Integer)
+    temperature = Column(Float)  # Changed from Integer to Float
     system_prompt = Column(Text)
     tools = Column(JSON)  # List of tools
     max_iterations = Column(Integer)
