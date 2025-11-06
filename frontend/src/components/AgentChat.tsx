@@ -40,6 +40,8 @@ export function AgentChat() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [threadId, setThreadId] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const sessionKeyRef = useRef<string>("");
+  const inFlightControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetchAgents();
@@ -85,6 +87,42 @@ export function AgentChat() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (!selectedAgentId) return;
+
+    const prevThreadId = threadId;
+
+    const cleanupPrevSession = async () => {
+      if (prevThreadId) {
+        try {
+          await fetch(`http://localhost:8001/api/v1/agents/memory/session/${prevThreadId}`, {
+            method: 'POST',
+          });
+          console.log(`Previous session ${prevThreadId} cleaned up on agent switch`);
+        } catch (error) {
+          console.error("Error cleaning up previous session on agent switch:", error);
+        }
+      }
+    };
+
+    const newThreadId = `thread_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setThreadId(newThreadId);
+
+    setMessages([]);
+    setInput("");
+    setIsLoading(false);
+
+    cleanupPrevSession();
+  }, [selectedAgentId]);
+
+  useEffect(() => {
+    sessionKeyRef.current = `${selectedAgentId}|${threadId}`;
+    if (inFlightControllerRef.current) {
+      try { inFlightControllerRef.current.abort(); } catch {}
+      inFlightControllerRef.current = null;
+    }
+  }, [selectedAgentId, threadId]);
 
   const fetchAgents = async () => {
     try {
@@ -157,6 +195,13 @@ export function AgentChat() {
     setInput("");
     setIsLoading(true);
 
+    const requestSessionKey = sessionKeyRef.current;
+    const controller = new AbortController();
+    if (inFlightControllerRef.current) {
+      try { inFlightControllerRef.current.abort(); } catch {}
+    }
+    inFlightControllerRef.current = controller;
+
     try {
       const response = await fetch(`http://localhost:8001/api/v1/agents/${selectedAgentId}/chat/`, {
         method: 'POST',
@@ -167,10 +212,12 @@ export function AgentChat() {
           message: input,
           thread_id: threadId
         }),
+        signal: controller.signal,
       });
 
       if (response.ok) {
         const data = await response.json();
+        if (requestSessionKey !== sessionKeyRef.current) return;
         const assistantMessage: Message = {
           role: "assistant",
           content: data.response || "Response received",
@@ -180,15 +227,17 @@ export function AgentChat() {
       } else {
         throw new Error('Failed to get response');
       }
-    } catch (error) {
-      console.error("Error sending message:", error);
-      toast({
-        title: "Error",
-        description: "Failed to send message. Make sure the backend is running.",
-        variant: "destructive",
-      });
+    } catch (error: any) {
+      if (error?.name !== 'AbortError') {
+        console.error("Error sending message:", error);
+        toast({
+          title: "Error",
+          description: "Failed to send message. Make sure the backend is running.",
+          variant: "destructive",
+        });
+      }
     } finally {
-      setIsLoading(false);
+      if (requestSessionKey === sessionKeyRef.current) setIsLoading(false);
     }
   };
 
