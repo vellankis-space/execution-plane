@@ -32,7 +32,7 @@ class KnowledgeBaseService:
     def __init__(self, db: Session):
         self.db = db
         self.qdrant_client = get_qdrant_client()  # Use singleton instance
-        self.ollama_client = OllamaClient()
+        self.ollama_client = OllamaClient(host="http://172.16.4.197:11434")
         self.upload_dir = "/tmp/knowledge_base_uploads"
         os.makedirs(self.upload_dir, exist_ok=True)
     

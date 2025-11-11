@@ -14,6 +14,7 @@ class Agent(Base):
     temperature = Column(Float)  # Changed from Integer to Float
     system_prompt = Column(Text)
     tools = Column(JSON)  # List of tools
+    tool_configs = Column(JSON)  # Tool-specific configurations (API keys, settings)
     max_iterations = Column(Integer)
     memory_type = Column(String)  # memory-saver, postgres, redis, none (deprecated)
     streaming_enabled = Column(Boolean, default=True)

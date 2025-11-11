@@ -5,6 +5,7 @@ from datetime import datetime
 
 from schemas.agent import AgentCreate, AgentInDB, AgentExecutionRequest, AgentExecutionResponse, AgentChatRequest
 from services.agent_service import AgentService
+from services.tools_service import ToolsService
 from core.database import get_db
 from pydantic import BaseModel
 
@@ -18,6 +19,7 @@ class AgentResponse(BaseModel):
     temperature: float  # Changed from int to float to match the model
     system_prompt: Optional[str] = ""
     tools: List[str] = []
+    tool_configs: Optional[Dict[str, Any]] = None
     max_iterations: int
     streaming_enabled: bool
     human_in_loop: bool
@@ -237,5 +239,14 @@ async def delete_session_memories_post(session_id: str, db: Session = Depends(ge
             return MemoryResponse(success=True, message=f"Session memories deleted successfully for {session_id}")
         else:
             return MemoryResponse(success=False, message="Failed to delete session memories")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Tools endpoints
+@router.get("/tools/available")
+async def get_available_tools():
+    """Get information about available tools"""
+    try:
+        return ToolsService.get_available_tools_info()
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

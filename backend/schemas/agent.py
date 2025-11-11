@@ -10,6 +10,7 @@ class AgentBase(BaseModel):
     temperature: float  # Changed from int to float to match the model
     system_prompt: Optional[str] = ""
     tools: List[str] = []
+    tool_configs: Optional[Dict[str, Any]] = None  # Tool-specific configurations (API keys, settings)
     max_iterations: int
     memory_type: Optional[str] = None  # Deprecated field for backward compatibility
     streaming_enabled: bool

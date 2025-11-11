@@ -25,3 +25,16 @@ beautifulsoup4==4.12.3
 requests==2.32.3
 aiohttp==3.11.11
 unstructured==0.16.15
+
+# New tool dependencies
+duckduckgo-search==6.3.5
+playwright==1.49.1
+lxml==5.3.0
+pygithub==2.5.0
+langchain-google-community[gmail]==2.0.10
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
+google-api-python-client>=2.161
+toolbox-langchain==0.1.0
+nest-asyncio==1.6.0
+firecrawl-py==0.0.20

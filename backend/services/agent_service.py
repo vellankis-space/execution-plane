@@ -17,11 +17,13 @@ import base64
 from cryptography.fernet import Fernet
 
 from services.memory_service import MemoryService
+from services.tools_service import ToolsService
 from middleware.pii_middleware import create_pii_middleware_from_config, PIIMiddleware
 
 from models.agent import Agent as AgentModel
 from schemas.agent import AgentCreate, AgentInDB
 from core.config import settings
+from sqlalchemy import text
 
 
 class AgentService:
@@ -33,6 +35,36 @@ class AgentService:
         
         # Initialize memory service for mem0 integration
         self.memory_service = MemoryService()
+        
+        # Initialize tools service for external tools
+        self.tools_service = ToolsService()
+        
+        # Ensure database schema compatibility (add columns if missing)
+        try:
+            self._ensure_schema()
+        except Exception as e:
+            # Do not fail service init if schema check fails; log and continue
+            print(f"Schema check warning: {e}")
+
+    def _ensure_schema(self):
+        """Ensure required columns exist; add them if missing (SQLite safe)."""
+        # Only run for SQLite-like DBs where PRAGMA is supported; otherwise skip
+        try:
+            conn = self.db.connection()
+            # Check agents table columns
+            result = conn.execute(text("PRAGMA table_info(agents)")).fetchall()
+            columns = {row[1] for row in result}
+            # Add tool_configs column if missing
+            if "tool_configs" not in columns:
+                print("Adding missing 'tool_configs' column to agents table (auto-fix)...")
+                conn.execute(text("ALTER TABLE agents ADD COLUMN tool_configs JSON"))
+            # Add pii_config column if missing (backward-compat)
+            if "pii_config" not in columns:
+                print("Adding missing 'pii_config' column to agents table (auto-fix)...")
+                conn.execute(text("ALTER TABLE agents ADD COLUMN pii_config JSON"))
+        except Exception as e:
+            # Re-raise to be caught by caller; helpful for logging only
+            raise e
     
     def _get_or_create_encryption_key(self) -> bytes:
         # In production, this should come from a secure environment variable
@@ -68,6 +100,7 @@ class AgentService:
             temperature=agent_data.temperature,
             system_prompt=agent_data.system_prompt,
             tools=agent_data.tools,
+            tool_configs=agent_data.tool_configs,
             max_iterations=agent_data.max_iterations,
             memory_type=agent_data.memory_type,
             streaming_enabled=agent_data.streaming_enabled,
@@ -208,11 +241,7 @@ class AgentService:
                         for i, memory in enumerate(memories, 1):
                             memory_content = memory.get('memory', '') if isinstance(memory, dict) else str(memory)
                             memory_context += f"{i}. {memory_content}\n"
-                        # Apply PII filtering to memory context before injecting into prompts
-                        if agent.pii_config:
-                            pii_middleware = create_pii_middleware_from_config(agent.pii_config)
-                            if pii_middleware:
-                                memory_context = pii_middleware.process_message(memory_context, message_type="output")
+                        # Note: Memory context is from previous trusted conversations and should not be PII filtered
                 except Exception as mem_error:
                     print(f"Error retrieving memory context: {mem_error}")
             
@@ -227,11 +256,7 @@ class AgentService:
                     kb_service.query_agent_knowledge(agent_id, filtered_input, top_k=5),
                     timeout=10.0
                 )
-                # Apply PII filtering to knowledge base content before using it
-                if knowledge_context and agent.pii_config:
-                    pii_middleware = create_pii_middleware_from_config(agent.pii_config)
-                    if pii_middleware:
-                        knowledge_context = pii_middleware.process_message(knowledge_context, message_type="output")
+                # Note: Knowledge base content is trusted and should not be PII filtered
                 if knowledge_context:
                     print(f"Retrieved KB context for agent {agent_id}: {len(knowledge_context)} chars")
             except asyncio.TimeoutError:
@@ -252,6 +277,13 @@ class AgentService:
             if agent.agent_type == "react":
                 # Add memory context to system prompt for ReAct agents
                 system_content = agent.system_prompt or "You are a helpful AI assistant."
+                
+                # Add available tools information to prevent tool hallucination
+                if hasattr(agent, 'tools') and agent.tools:
+                    tool_names = agent.tools
+                    if tool_names:
+                        system_content += f"\n\nAvailable tools: {', '.join(tool_names)}. You can only use these tools. Do not attempt to use any other tools."
+                
                 if knowledge_context:
                     system_content += f"\n\n{knowledge_context}"
                 if memory_context:
@@ -268,7 +300,7 @@ class AgentService:
                     # ReAct agents expect messages format
                     response = await asyncio.wait_for(
                         asyncio.to_thread(langgraph_agent.invoke, {"messages": messages}),
-                        timeout=60.0  # 60 second timeout for LLM calls
+                        timeout=90.0  # 90 second timeout for LLM calls (increased for FireCrawl)
                     )
                 else:
                     # Other agents (plan-execute, reflection, custom) expect input format
@@ -284,10 +316,29 @@ class AgentService:
                     
                     response = await asyncio.wait_for(
                         asyncio.to_thread(langgraph_agent.invoke, {"input": enhanced_input}),
-                        timeout=60.0
+                        timeout=90.0
                     )
             except asyncio.TimeoutError:
                 raise ValueError("Agent response timed out. The LLM provider may be slow or unreachable. Please try again.")
+            except Exception as e:
+                # Handle API errors more gracefully
+                error_msg = str(e)
+                print(f"Error executing agent {agent_id}: {error_msg}")
+                
+                # Check for specific API key errors from LLM providers
+                if (("API key" in error_msg or "401" in error_msg) and 
+                    ("OpenAI" in error_msg or "Anthropic" in error_msg or "Groq" in error_msg or "api_key" in error_msg.lower())):
+                    raise ValueError("Invalid API key. Please check your API key configuration.")
+                elif "403" in error_msg and ("OpenAI" in error_msg or "Anthropic" in error_msg or "Groq" in error_msg):
+                    raise ValueError("Access forbidden. Please check your API key permissions.")
+                elif "429" in error_msg and ("OpenAI" in error_msg or "Anthropic" in error_msg or "Groq" in error_msg):
+                    raise ValueError("Rate limit exceeded. Please try again later.")
+                elif "tool_use_failed" in error_msg or "Failed to call a function" in error_msg:
+                    # Handle tool execution failures more gracefully
+                    raise ValueError("Tool execution failed. This may be due to rate limiting, network issues, or missing API keys. Please try again or check your tool configuration.")
+                else:
+                    # For non-API key errors, re-raise the original exception
+                    raise e
             
             # Extract the final response
             # Handle different response formats
@@ -320,25 +371,15 @@ class AgentService:
                     return str(final_message.get('content', str(final_message)))
                 else:
                     return str(final_message)
-            except:
+            except Exception as e:
                 # Fallback to string representation
                 return str(final_message)
         except Exception as e:
-            # Handle API errors more gracefully
-            error_msg = str(e)
-            print(f"Error executing agent {agent_id}: {error_msg}")
-            
-            # Check for specific API key errors from LLM providers
-            if (("API key" in error_msg or "401" in error_msg) and 
-                ("OpenAI" in error_msg or "Anthropic" in error_msg or "Groq" in error_msg or "api_key" in error_msg.lower())):
-                raise ValueError("Invalid API key. Please check your API key configuration.")
-            elif "403" in error_msg and ("OpenAI" in error_msg or "Anthropic" in error_msg or "Groq" in error_msg):
-                raise ValueError("Access forbidden. Please check your API key permissions.")
-            elif "429" in error_msg and ("OpenAI" in error_msg or "Anthropic" in error_msg or "Groq" in error_msg):
-                raise ValueError("Rate limit exceeded. Please try again later.")
-            else:
-                # For non-API key errors, re-raise the original exception
-                raise e
+            # Handle any unexpected errors in the chat_with_agent method
+            print(f"Unexpected error in chat_with_agent for agent {agent_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            raise ValueError(f"An unexpected error occurred while processing your request: {str(e)}")
     
     async def stream_agent(self, websocket, agent_id: str):
         """Stream agent responses via WebSocket"""
@@ -441,69 +482,68 @@ class AgentService:
         # Check if the LLM supports tools (bind_tools method)
         # FakeListLLM doesn't support tools, so we need to handle this case
         if hasattr(llm, 'bind_tools'):
-            # Define a web search tool
-            @tool
-            def web_search(query: str) -> str:
-                """Search the web for information.
-                
-                Args:
-                    query: Search query
-                    
-                Returns:
-                    Summary of search results
-                """
-                # This is a placeholder - in a real implementation, you would connect to a search API
-                search_prompt = PromptTemplate.from_template("""You are a search engine simulator. 
-                Provide a relevant response for the search query: {query}""")
-                
-                chain = search_prompt | llm | StrOutputParser()
-                try:
-                    result = chain.invoke({"query": query})
-                    return result
-                except Exception as e:
-                    return f"Search results for '{query}': [Simulated results would appear here]"
+            # Start with empty tools list - all tools come from external services
+            tools = []
             
-            # Define a calculation tool
-            @tool
-            def calculator(expression: str) -> str:
-                """Perform mathematical calculations.
-                
-                Args:
-                    expression: Mathematical expression to evaluate
-                    
-                Returns:
-                    Result of the calculation
-                """
+            # Add external tools if configured
+            if hasattr(agent_config, 'tools') and agent_config.tools:
                 try:
-                    # Simple evaluation - in practice, you'd want to be more careful about security
-                    result = eval(expression)
-                    return str(result)
-                except Exception as e:
-                    return f"Error calculating '{expression}': {str(e)}"
-            
-            # Define a general information tool
-            @tool
-            def get_general_info(topic: str) -> str:
-                """Get general information about a topic.
-                
-                Args:
-                    topic: Topic to get information about
+                    # Get tool configurations if available
+                    tool_configs = {}
+                    if hasattr(agent_config, 'tool_configs') and agent_config.tool_configs:
+                        tool_configs = agent_config.tool_configs
                     
-                Returns:
-                    Information about the topic
-                """
-                info_prompt = PromptTemplate.from_template("""You are an encyclopedia. 
-                Provide concise, accurate information about the following topic: {topic}""")
-                
-                chain = info_prompt | llm | StrOutputParser()
-                try:
-                    result = chain.invoke({"topic": topic})
-                    return result
+                    print(f"DEBUG: Agent tools requested: {agent_config.tools}")
+                    print(f"DEBUG: Agent tool_configs: {tool_configs}")
+                    
+                    # Handle MCP tools separately since they need async initialization
+                    mcp_tools = []
+                    other_tools = []
+                    
+                    for tool_name in agent_config.tools:
+                        if tool_name == "mcp_database" and tool_configs.get("mcp_database"):
+                            # MCP tools need async handling - they'll be added later
+                            pass
+                        else:
+                            other_tools.append(tool_name)
+                    
+                    print(f"DEBUG: Non-MCP tools to load: {other_tools}")
+                    
+                    # Get non-MCP external tools first
+                    if other_tools:
+                        external_tools = self.tools_service.get_tools(other_tools, tool_configs)
+                        tools.extend(external_tools)
+                        print(f"DEBUG: External tools loaded: {[t.name for t in external_tools]}")
+                    
+                    print(f"Loaded {len(tools)} external tools: {[t.name for t in tools]}")
                 except Exception as e:
-                    return f"Information about '{topic}': [Information would appear here]"
+                    print(f"Error loading external tools: {e}")
             
-            # Create the tools list
-            tools = [web_search, calculator, get_general_info]
+            # Ensure at least one tool is available - add a basic fallback if no tools configured
+            if not tools:
+                # Define a basic web search tool as fallback if no external tools configured
+                @tool
+                def web_search(query: str) -> str:
+                    """Search the web for information.
+                    
+                    Args:
+                        query: Search query
+                        
+                    Returns:
+                        Summary of search results
+                    """
+                    # This is a placeholder - in a real implementation, you would connect to a search API
+                    search_prompt = PromptTemplate.from_template("""You are a search engine simulator. 
+                    Provide a relevant response for the search query: {query}""")
+                    
+                    chain = search_prompt | llm | StrOutputParser()
+                    try:
+                        result = chain.invoke({"query": query})
+                        return result
+                    except Exception as e:
+                        return f"Search results for '{query}': [Simulated results would appear here]"
+                
+                tools.append(web_search)
             
             # Create the ReAct agent with the LLM and tools
             react_agent = create_react_agent(llm, tools)

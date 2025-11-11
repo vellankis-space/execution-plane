@@ -13,6 +13,7 @@ import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layer
 import { toast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AgentList } from "@/components/AgentList";
+import { ToolConfigDialog } from "@/components/ToolConfigDialog";
 
 const LLM_PROVIDERS = [
   { value: "openai", label: "OpenAI" },
@@ -147,14 +148,14 @@ const MCP_SERVERS = [
 ];
 
 const TOOLS = [
-  { id: "web_search", label: "Web Search" },
-  { id: "code_interpreter", label: "Code Interpreter" },
-  { id: "file_browser", label: "File Browser" },
-  { id: "calculator", label: "Calculator" },
-  { id: "api_caller", label: "API Caller" },
-  { id: "database_query", label: "Database Query" },
-  { id: "email_sender", label: "Email Sender" },
-  { id: "web_scraper", label: "Web Scraper" },
+  // New LangChain Tools (6 tools from documentation)
+  { id: "duckduckgo_search", label: "DuckDuckGo Search", requiresConfig: false, icon: "🦆" },
+  { id: "brave_search", label: "Brave Search", requiresConfig: true, icon: "🦁" },
+  { id: "github_toolkit", label: "GitHub Toolkit", requiresConfig: true, icon: "🐙" },
+  { id: "gmail_toolkit", label: "Gmail Toolkit", requiresConfig: true, icon: "📧" },
+  { id: "playwright_browser", label: "PlayWright Browser", requiresConfig: false, icon: "🎭" },
+  { id: "mcp_database", label: "MCP Database Toolbox", requiresConfig: true, icon: "🗄️" },
+  { id: "firecrawl", label: "FireCrawl", requiresConfig: true, icon: "🔥" },
 ];
 
 const PII_CATEGORIES = [
@@ -198,6 +199,10 @@ export function AgentBuilder() {
   const [showCustomPIIForm, setShowCustomPIIForm] = useState(false);
   const [piiStrategy, setPIIStrategy] = useState<"redact" | "mask" | "hash" | "block">("redact");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  
+  // Tool configurations
+  const [toolConfigs, setToolConfigs] = useState<Record<string, any>>({});
+  const [showToolConfig, setShowToolConfig] = useState<string | null>(null);
 
   const handleProviderChange = (provider: string) => {
     setLlmProvider(provider);
@@ -213,11 +218,32 @@ export function AgentBuilder() {
   };
 
   const handleToolsToggle = (toolId: string) => {
-    setSelectedToolsList(prev =>
-      prev.includes(toolId)
-        ? prev.filter(id => id !== toolId)
-        : [...prev, toolId]
-    );
+    setSelectedToolsList(prev => {
+      const isSelected = prev.includes(toolId);
+      
+      if (isSelected) {
+        // Deselecting - remove from list and configs
+        const newConfigs = { ...toolConfigs };
+        delete newConfigs[toolId];
+        setToolConfigs(newConfigs);
+        return prev.filter(id => id !== toolId);
+      } else {
+        // Selecting - add to list and show config if needed
+        const tool = TOOLS.find(t => t.id === toolId);
+        if (tool?.requiresConfig) {
+          setShowToolConfig(toolId);
+        }
+        return [...prev, toolId];
+      }
+    });
+  };
+  
+  const handleToolConfigSave = (toolId: string, config: any) => {
+    setToolConfigs(prev => ({
+      ...prev,
+      [toolId]: config
+    }));
+    setShowToolConfig(null);
   };
 
   const handlePIIToggle = (piiId: string) => {
@@ -314,7 +340,8 @@ export function AgentBuilder() {
       api_key: apiKey,
       temperature: temperature[0],
       system_prompt: systemPrompt,
-      tools: selectedTools,
+      tools: selectedToolsList.length > 0 ? selectedToolsList : selectedTools,
+      tool_configs: Object.keys(toolConfigs).length > 0 ? toolConfigs : null,
       max_iterations: parseInt(maxIterations),
       memory_type: memoryType,
       streaming_enabled: streamingEnabled,
@@ -638,7 +665,7 @@ export function AgentBuilder() {
                 {TOOLS.map(tool => (
                   <div
                     key={tool.id}
-                    className="flex items-center space-x-2 p-2.5 rounded-md border border-border bg-background hover:bg-muted transition-colors cursor-pointer"
+                    className="flex items-center space-x-2 p-2.5 rounded-md border border-border bg-background hover:bg-muted transition-colors cursor-pointer relative"
                     onClick={() => handleToolsToggle(tool.id)}
                   >
                     <Checkbox
@@ -647,8 +674,21 @@ export function AgentBuilder() {
                       onCheckedChange={() => handleToolsToggle(tool.id)}
                     />
                     <label htmlFor={tool.id} className="text-xs cursor-pointer flex-1 leading-tight">
+                      {tool.icon && <span className="mr-1">{tool.icon}</span>}
                       {tool.label}
                     </label>
+                    {tool.requiresConfig && selectedToolsList.includes(tool.id) && (
+                      <Settings2 
+                        className="w-3.5 h-3.5 text-primary cursor-pointer hover:text-primary/80" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowToolConfig(tool.id);
+                        }}
+                      />
+                    )}
+                    {tool.requiresConfig && !selectedToolsList.includes(tool.id) && (
+                      <Key className="w-3 h-3 text-muted-foreground" />
+                    )}
                   </div>
                 ))}
               </div>
@@ -985,6 +1025,17 @@ export function AgentBuilder() {
           </div>
         </div>
       </div>
+      
+      {/* Tool Configuration Dialog */}
+      {showToolConfig && (
+        <ToolConfigDialog
+          toolId={showToolConfig}
+          toolLabel={TOOLS.find(t => t.id === showToolConfig)?.label || "Tool"}
+          onSave={handleToolConfigSave}
+          onClose={() => setShowToolConfig(null)}
+          existingConfig={toolConfigs[showToolConfig]}
+        />
+      )}
     </div>
   );
 }

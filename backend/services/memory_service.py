@@ -81,7 +81,7 @@ class MemoryService:
                     "provider": "ollama",
                     "config": {
                         "model": self.embedding_model,
-                        "ollama_base_url": "http://localhost:11434",
+                        "ollama_base_url": "http://172.16.4.197:11434",
                     }
                 },
                 "llm": {
