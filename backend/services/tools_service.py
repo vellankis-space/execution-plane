@@ -81,59 +81,82 @@ class ToolsService:
     def _init_duckduckgo(self, config: Dict[str, Any]) -> List[BaseTool]:
         """Initialize DuckDuckGo Search tool (no API key required)"""
         try:
-            from langchain_community.tools import DuckDuckGoSearchRun
-            from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+            from duckduckgo_search import DDGS
             import time
             
             max_results = config.get("max_results", 5)
-            timeout = config.get("timeout", 10)
             
-            wrapper = DuckDuckGoSearchAPIWrapper(max_results=max_results)
-            
-            class RateLimitHandledDuckDuckGoSearchRun(DuckDuckGoSearchRun):
-                def _run(self, query: str) -> str:
-                    max_retries = 3
-                    base_delay = 2
-                    
-                    for attempt in range(max_retries):
-                        try:
-                            return super()._run(query)
-                        except Exception as e:
-                            error_msg = str(e).lower()
+            def duckduckgo_search(query: str) -> str:
+                """Search the web using DuckDuckGo. Useful for finding current information, news, and general web content."""
+                max_retries = 3
+                base_delay = 2
+                
+                for attempt in range(max_retries):
+                    try:
+                        with DDGS() as ddgs:
+                            results = list(ddgs.text(query, max_results=max_results))
                             
-                            # Check for rate limiting
-                            if any(keyword in error_msg for keyword in [
-                                "ratelimit", "rate limit", "too many requests",
-                                "429", "blocked", "forbidden", "access denied"
-                            ]):
-                                if attempt < max_retries - 1:
-                                    delay = base_delay * (2 ** attempt)
-                                    self.logger.warning(f"DuckDuckGo rate limited (attempt {attempt + 1}/{max_retries}). Waiting {delay}s...")
-                                    time.sleep(delay)
-                                    continue
-                                else:
-                                    return "DuckDuckGo search is temporarily unavailable due to rate limiting. Please try again later."
-                            
-                            # Check for timeout
-                            elif any(keyword in error_msg for keyword in [
-                                "timeout", "timed out", "connection timeout"
-                            ]):
-                                if attempt < max_retries - 1:
-                                    delay = base_delay * (2 ** attempt)
-                                    self.logger.warning(f"DuckDuckGo timeout (attempt {attempt + 1}/{max_retries}). Waiting {delay}s...")
-                                    time.sleep(delay)
-                                    continue
-                                else:
-                                    return f"Search timed out after {max_retries} attempts."
-                            
-                            # Other errors
+                        if not results:
+                            return "No search results found."
+                        
+                        # Format results
+                        formatted_results = []
+                        for i, result in enumerate(results[:max_results], 1):
+                            title = result.get('title', 'No title')
+                            link = result.get('href', 'No link')
+                            snippet = result.get('body', 'No description')
+                            formatted_results.append(f"{i}. **{title}**\n   {snippet}\n   Link: {link}")
+                        
+                        return "\n\n".join(formatted_results)
+                        
+                    except Exception as e:
+                        error_msg = str(e).lower()
+                        
+                        # Check for rate limiting
+                        if any(keyword in error_msg for keyword in [
+                            "ratelimit", "rate limit", "too many requests",
+                            "429", "blocked", "forbidden", "access denied"
+                        ]):
+                            if attempt < max_retries - 1:
+                                delay = base_delay * (2 ** attempt)
+                                self.logger.warning(f"DuckDuckGo rate limited (attempt {attempt + 1}/{max_retries}). Waiting {delay}s...")
+                                time.sleep(delay)
+                                continue
                             else:
-                                self.logger.error(f"DuckDuckGo search error: {str(e)}")
-                                return f"Search failed: {str(e)}"
-                    
-                    return "Search failed after multiple attempts."
+                                return "DuckDuckGo search is temporarily unavailable due to rate limiting. Please try again later."
+                        
+                        # Check for timeout
+                        elif any(keyword in error_msg for keyword in [
+                            "timeout", "timed out", "connection timeout"
+                        ]):
+                            if attempt < max_retries - 1:
+                                delay = base_delay * (2 ** attempt)
+                                self.logger.warning(f"DuckDuckGo timeout (attempt {attempt + 1}/{max_retries}). Waiting {delay}s...")
+                                time.sleep(delay)
+                                continue
+                            else:
+                                return f"Search timed out after {max_retries} attempts."
+                        
+                        # Other errors
+                        else:
+                            self.logger.error(f"DuckDuckGo search error: {str(e)}")
+                            return f"Search failed: {str(e)}"
+                
+                return "Search failed after multiple attempts."
             
-            search_tool = RateLimitHandledDuckDuckGoSearchRun(api_wrapper=wrapper)
+            # Create StructuredTool
+            from pydantic import BaseModel, Field
+            
+            class SearchInput(BaseModel):
+                query: str = Field(description="The search query to look up on DuckDuckGo")
+            
+            search_tool = StructuredTool.from_function(
+                func=duckduckgo_search,
+                name="duckduckgo_search",
+                description="Search the web using DuckDuckGo. Useful for finding current information, news, and general web content. Returns search results with titles, links, and snippets.",
+                args_schema=SearchInput
+            )
+            
             self.logger.info("DuckDuckGo search tool initialized successfully")
             return [search_tool]
             
@@ -142,7 +165,7 @@ class ToolsService:
             return self._create_placeholder_tool(
                 "duckduckgo_search",
                 "Search the web using DuckDuckGo",
-                "DuckDuckGo dependencies not installed. Install: pip install langchain-community duckduckgo-search"
+                "DuckDuckGo dependencies not installed. Install: pip install duckduckgo-search"
             )
         except Exception as e:
             self.logger.error(f"Error initializing DuckDuckGo: {e}", exc_info=True)

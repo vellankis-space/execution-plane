@@ -149,7 +149,7 @@ const MCP_SERVERS = [
 
 const TOOLS = [
   // New LangChain Tools (6 tools from documentation)
-  { id: "duckduckgo_search", label: "DuckDuckGo Search", requiresConfig: false, icon: "🦆" },
+  { id: "duckduckgo_search", label: "DuckDuckGo Search", requiresConfig: true, icon: "🦆" },
   { id: "brave_search", label: "Brave Search", requiresConfig: true, icon: "🦁" },
   { id: "github_toolkit", label: "GitHub Toolkit", requiresConfig: true, icon: "🐙" },
   { id: "gmail_toolkit", label: "Gmail Toolkit", requiresConfig: true, icon: "📧" },
