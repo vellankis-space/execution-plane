@@ -40,3 +40,6 @@ nest-asyncio==1.6.0
 firecrawl-py==0.0.20
 arxiv==2.3.0
 wikipedia==1.4.0
+
+# Monitoring dependencies
+psutil==6.1.0

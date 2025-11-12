@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "ask": [
+      "Read(!C:\\Users\\cogni\\execution-plane/**)",
+      "Edit(!C:\\Users\\cogni\\execution-plane/**)"
+    ],
+    "allow": [
+      "Read(C:\\Users\\cogni\\execution-plane/**)",
+      "Edit(C:\\Users\\cogni\\execution-plane/**)"
+    ]
+  },
+  "memoryImport": {},
+  "monitoring": {}
+}
