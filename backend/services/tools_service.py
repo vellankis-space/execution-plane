@@ -28,6 +28,7 @@ class ToolsService:
             "mcp_database": self._init_mcp_database,
             "firecrawl": self._init_firecrawl,
             "arxiv": self._init_arxiv,
+            "wikipedia": self._init_wikipedia,
         }
     
     def _validate_url(self, url: str) -> bool:
@@ -574,6 +575,30 @@ class ToolsService:
                 f"Arxiv initialization failed: {str(e)}"
             )
 
+    def _init_wikipedia(self, config: Dict[str, Any]) -> List[BaseTool]:
+        """Initialize Wikipedia tool for searching encyclopedia articles"""
+        try:
+            from langchain_community.tools import WikipediaQueryRun
+            from langchain_community.utilities import WikipediaAPIWrapper
+            
+            wikipedia_tool = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper())
+            self.logger.info("Wikipedia tool initialized successfully")
+            return [wikipedia_tool]
+        except ImportError as e:
+            self.logger.error(f"Wikipedia dependencies not installed: {e}")
+            return self._create_placeholder_tool(
+                "wikipedia",
+                "Search Wikipedia encyclopedia",
+                "Wikipedia dependencies not installed. Install: pip install wikipedia"
+            )
+        except Exception as e:
+            self.logger.error(f"Error initializing Wikipedia tool: {e}", exc_info=True)
+            return self._create_placeholder_tool(
+                "wikipedia",
+                "Search Wikipedia encyclopedia",
+                f"Wikipedia initialization failed: {str(e)}"
+            )
+
     def _create_firecrawl_placeholders(self, error_type: str) -> List[BaseTool]:
         """Create placeholder tools for FireCrawl"""
         error_messages = {
@@ -683,6 +708,12 @@ class ToolsService:
             "arxiv": {
                 "name": "Arxiv",
                 "description": "Search for academic papers on Arxiv",
+                "requires_api_key": False,
+                "config_fields": {}
+            },
+            "wikipedia": {
+                "name": "Wikipedia",
+                "description": "Search Wikipedia encyclopedia articles",
                 "requires_api_key": False,
                 "config_fields": {}
             }

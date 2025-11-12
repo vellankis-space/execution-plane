@@ -157,6 +157,7 @@ const TOOLS = [
   { id: "mcp_database", label: "MCP Database Toolbox", requiresConfig: true, icon: "🗄️" },
   { id: "firecrawl", label: "FireCrawl", requiresConfig: true, icon: "🔥" },
   { id: "arxiv", label: "Arxiv", requiresConfig: false, icon: "📚" },
+  { id: "wikipedia", label: "Wikipedia", requiresConfig: false, icon: "🌐" },
 ];
 
 const PII_CATEGORIES = [

@@ -1,4 +1,4 @@
-import { Book } from "lucide-react";
+import { Book, Globe } from "lucide-react";
 import { ToolOption } from "./types";
 
 export const toolOptions: ToolOption[] = [
@@ -8,5 +8,11 @@ export const toolOptions: ToolOption[] = [
     label: "Arxiv",
     description: "Search academic papers",
     icon: Book,
+  },
+  {
+    value: "wikipedia",
+    label: "Wikipedia",
+    description: "Search encyclopedia articles",
+    icon: Globe,
   },
 ];
