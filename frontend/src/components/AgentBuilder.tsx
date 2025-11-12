@@ -156,6 +156,7 @@ const TOOLS = [
   { id: "playwright_browser", label: "PlayWright Browser", requiresConfig: false, icon: "🎭" },
   { id: "mcp_database", label: "MCP Database Toolbox", requiresConfig: true, icon: "🗄️" },
   { id: "firecrawl", label: "FireCrawl", requiresConfig: true, icon: "🔥" },
+  { id: "arxiv", label: "Arxiv", requiresConfig: false, icon: "📚" },
 ];
 
 const PII_CATEGORIES = [

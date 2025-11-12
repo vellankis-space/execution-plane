@@ -1,7 +1,7 @@
 """
 Tools Service for managing external LangChain tools
 Supports: DuckDuckGo Search, Brave Search, GitHub Toolkit, Gmail Toolkit, 
-          PlayWright Browser Toolkit, FireCrawl, and MCP Toolbox for Databases
+          PlayWright Browser Toolkit, FireCrawl, MCP Toolbox for Databases, and Arxiv
 """
 
 from typing import List, Optional, Dict, Any
@@ -27,6 +27,7 @@ class ToolsService:
             "playwright_browser": self._init_playwright_browser,
             "mcp_database": self._init_mcp_database,
             "firecrawl": self._init_firecrawl,
+            "arxiv": self._init_arxiv,
         }
     
     def _validate_url(self, url: str) -> bool:
@@ -549,6 +550,30 @@ class ToolsService:
             self.logger.error(f"Error initializing FireCrawl: {e}", exc_info=True)
             return self._create_firecrawl_placeholders("initialization_failed")
     
+    def _init_arxiv(self, config: Dict[str, Any]) -> List[BaseTool]:
+        """Initialize Arxiv tool for searching academic papers"""
+        try:
+            from langchain_community.utilities import ArxivAPIWrapper
+            from langchain_community.tools import ArxivQueryRun
+            
+            arxiv_tool = ArxivQueryRun(api_wrapper=ArxivAPIWrapper())
+            self.logger.info("Arxiv tool initialized successfully")
+            return [arxiv_tool]
+        except ImportError as e:
+            self.logger.error(f"Arxiv dependencies not installed: {e}")
+            return self._create_placeholder_tool(
+                "arxiv",
+                "Search for academic papers on Arxiv",
+                "Arxiv dependencies not installed. Install: pip install arxiv"
+            )
+        except Exception as e:
+            self.logger.error(f"Error initializing Arxiv tool: {e}", exc_info=True)
+            return self._create_placeholder_tool(
+                "arxiv",
+                "Search for academic papers on Arxiv",
+                f"Arxiv initialization failed: {str(e)}"
+            )
+
     def _create_firecrawl_placeholders(self, error_type: str) -> List[BaseTool]:
         """Create placeholder tools for FireCrawl"""
         error_messages = {
@@ -654,5 +679,11 @@ class ToolsService:
                     "crawl_timeout": {"type": "int", "default": 45},
                     "map_timeout": {"type": "int", "default": 20}
                 }
+            },
+            "arxiv": {
+                "name": "Arxiv",
+                "description": "Search for academic papers on Arxiv",
+                "requires_api_key": False,
+                "config_fields": {}
             }
         }
