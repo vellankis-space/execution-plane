@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Bot, Workflow, Plus, ArrowRight, Activity } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AgentList } from "@/components/AgentList";
+import { WorkflowList } from "@/components/workflow/WorkflowList";
 import { UserMenu } from "@/components/auth/UserMenu";
 
 export default function Index() {
@@ -53,7 +54,7 @@ export default function Index() {
                 Create and manage individual AI agents with specific capabilities
               </p>
               <Button variant="link" className="p-0 mt-2 h-auto" asChild>
-                <Link to="/" onClick={(e) => { e.preventDefault(); setActiveTab("agents"); }}>
+                <Link to="/agents">
                   Manage Agents <ArrowRight className="w-4 h-4 ml-1" />
                 </Link>
               </Button>
@@ -103,6 +104,7 @@ export default function Index() {
       </div>
 
       {activeTab === "agents" && <AgentList />}
+      {activeTab === "workflows" && <WorkflowList />}
     </div>
   );
 }

@@ -1,9 +1,9 @@
-import { WorkflowList } from "@/components/workflow/WorkflowList";
+import { AgentList } from "@/components/AgentList";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-export default function Workflows() {
+export default function Agents() {
   const navigate = useNavigate();
 
   return (
@@ -18,11 +18,11 @@ export default function Workflows() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h1 className="text-3xl font-bold tracking-tight">Workflows</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Agents</h1>
         </div>
       </div>
 
-      <WorkflowList />
+      <AgentList />
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText, Key, MessageSquare, Upload, Link2, Type, Brain, Wrench, Shield, Plus, X, Home } from "lucide-react";
+import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText, Key, MessageSquare, Upload, Link2, Type, Brain, Wrench, Shield, Plus, X, Home, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ToolConfigDialog } from "@/components/ToolConfigDialog";
@@ -174,6 +174,10 @@ const PII_CATEGORIES = [
 
 export function AgentBuilder() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editAgentId = searchParams.get('id');
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [agentName, setAgentName] = useState("");
   const [agentType, setAgentType] = useState("react");
   const [agentFramework, setAgentFramework] = useState("langgraph");
@@ -204,6 +208,61 @@ export function AgentBuilder() {
   // Tool configurations
   const [toolConfigs, setToolConfigs] = useState<Record<string, any>>({});
   const [showToolConfig, setShowToolConfig] = useState<string | null>(null);
+
+  // Fetch agent data if in edit mode
+  useEffect(() => {
+    const fetchAgentData = async () => {
+      if (editAgentId) {
+        setLoading(true);
+        try {
+          const response = await fetch(`http://localhost:8000/api/v1/agents/${editAgentId}`);
+          if (response.ok) {
+            const agent = await response.json();
+            setIsEditMode(true);
+            setAgentName(agent.name || "");
+            setAgentType(agent.agent_type || "react");
+            setLlmProvider(agent.llm_provider || "anthropic");
+            setLlmModel(agent.llm_model || "claude-sonnet-4-5");
+            setTemperature([agent.temperature || 0.7]);
+            setSystemPrompt(agent.system_prompt || "");
+            setSelectedTools(agent.tools || []);
+            setSelectedToolsList(agent.tools || []);
+            setMaxIterations(agent.max_iterations?.toString() || "15");
+            setMemoryType(agent.memory_type || "memory-saver");
+            setStreamingEnabled(agent.streaming_enabled !== false);
+            setHumanInLoop(agent.human_in_loop || false);
+            setRecursionLimit(agent.recursion_limit?.toString() || "25");
+            if (agent.tool_configs) {
+              setToolConfigs(agent.tool_configs);
+            }
+            if (agent.pii_config) {
+              setBlockedPII(agent.pii_config.blocked_pii_types || []);
+              setPIIStrategy(agent.pii_config.strategy || "redact");
+              if (agent.pii_config.custom_pii_categories) {
+                setCustomPII(agent.pii_config.custom_pii_categories);
+              }
+            }
+          } else {
+            toast({
+              title: "Error",
+              description: "Failed to load agent data",
+              variant: "destructive",
+            });
+          }
+        } catch (error) {
+          console.error("Error fetching agent:", error);
+          toast({
+            title: "Error",
+            description: "Failed to load agent data",
+            variant: "destructive",
+          });
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    fetchAgentData();
+  }, [editAgentId]);
 
   const handleProviderChange = (provider: string) => {
     setLlmProvider(provider);
@@ -316,6 +375,8 @@ export function AgentBuilder() {
       return;
     }
 
+    setLoading(true);
+
     // Build PII configuration only if user selected something
     let pii_config = null;
     if (blockedPII.length > 0 || customPII.length > 0) {
@@ -352,8 +413,13 @@ export function AgentBuilder() {
     };
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/agents/', {
-        method: 'POST',
+      const url = isEditMode 
+        ? `http://localhost:8000/api/v1/agents/${editAgentId}`
+        : 'http://localhost:8000/api/v1/agents/';
+      const method = isEditMode ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method: method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -362,7 +428,7 @@ export function AgentBuilder() {
 
       if (response.ok) {
         const agent = await response.json();
-        console.log("Agent created successfully:", agent);
+        console.log(isEditMode ? "Agent updated successfully:" : "Agent created successfully:", agent);
         
         // Create knowledge base if any knowledge is provided (text, links, or files)
         if (knowledgeText || knowledgeLinks || knowledgeFiles.length > 0) {
@@ -428,30 +494,38 @@ export function AgentBuilder() {
         }
         
         toast({
-          title: "Agent Created! 🎉",
-          description: `${agentName} configured with ${agentType} architecture and ID: ${agent.agent_id}`,
+          title: isEditMode ? "Agent Updated! 🎉" : "Agent Created! 🎉",
+          description: isEditMode 
+            ? `${agentName} has been updated successfully`
+            : `${agentName} configured with ${agentType} architecture and ID: ${agent.agent_id}`,
         });
-        // Reset form after successful creation
-        setAgentName("");
-        setSystemPrompt("");
-        setSelectedTools([]);
-        setKnowledgeText("");
-        setKnowledgeLinks("");
-        setKnowledgeFiles([]);
-        setBlockedPII([]);
-        setCustomPII([]);
-        setPIIStrategy("redact");
+        // Reset form after successful creation or navigate back after update
+        if (isEditMode) {
+          navigate('/');
+        } else {
+          setAgentName("");
+          setSystemPrompt("");
+          setSelectedTools([]);
+          setKnowledgeText("");
+          setKnowledgeLinks("");
+          setKnowledgeFiles([]);
+          setBlockedPII([]);
+          setCustomPII([]);
+          setPIIStrategy("redact");
+        }
       } else {
         const error = await response.json();
-        throw new Error(error.detail || 'Failed to create agent');
+        throw new Error(error.detail || (isEditMode ? 'Failed to update agent' : 'Failed to create agent'));
       }
     } catch (error) {
-      console.error("Error creating agent:", error);
+      console.error(isEditMode ? "Error updating agent:" : "Error creating agent:", error);
       toast({
-        title: "Error Creating Agent",
-        description: error.message || "Failed to create agent. Please try again.",
+        title: isEditMode ? "Error Updating Agent" : "Error Creating Agent",
+        description: error.message || (isEditMode ? "Failed to update agent. Please try again." : "Failed to create agent. Please try again."),
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -461,8 +535,8 @@ export function AgentBuilder() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">Playground</h1>
-            <p className="text-sm text-muted-foreground mt-1">Configure and test your LangGraph agent</p>
+            <h1 className="text-2xl font-semibold text-foreground">{isEditMode ? 'Edit Agent' : 'Playground'}</h1>
+            <p className="text-sm text-muted-foreground mt-1">{isEditMode ? 'Update your agent configuration' : 'Configure and test your LangGraph agent'}</p>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -474,9 +548,13 @@ export function AgentBuilder() {
               <MessageSquare className="w-4 h-4 mr-2" />
               Chat
             </Button>
-            <Button variant="default" size="default" onClick={handleGenerateAgent}>
-              <Sparkles className="w-4 h-4 mr-2" />
-              Generate Agent
+            <Button variant="default" size="default" onClick={handleGenerateAgent} disabled={loading}>
+              {loading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4 mr-2" />
+              )}
+              {loading ? 'Creating...' : (isEditMode ? 'Update Agent' : 'Generate Agent')}
             </Button>
           </div>
         </div>

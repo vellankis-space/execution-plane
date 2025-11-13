@@ -5,12 +5,18 @@ from datetime import datetime
 
 class WorkflowStep(BaseModel):
     id: str
-    name: str
-    agent_id: str
+    name: Optional[str] = None
+    type: Optional[str] = "agent"  # Node type: start, end, agent, condition, loop, action, error_handler
+    agent_id: Optional[str] = None  # Required only for agent nodes
     description: Optional[str] = ""
+    data: Optional[Dict[str, Any]] = None  # Additional node data
     input_mapping: Optional[Dict[str, str]] = None  # Map input fields from context
     position: Optional[Dict[str, float]] = None  # For visualization positioning (x, y coordinates)
-    retry_policy: Optional[Dict[str, Any]] = None  # Retry configuration: max_retries, initial_delay, max_delay, exponential_base
+    retry_policy: Optional[Dict[str, Any]] = None  # Retry configuration
+    condition: Optional[Dict[str, Any]] = None  # For condition nodes
+    loop_config: Optional[Dict[str, Any]] = None  # For loop nodes
+    action_type: Optional[str] = None  # For action nodes
+    action_config: Optional[Dict[str, Any]] = None  # For action nodes
 
 
 class WorkflowDefinition(BaseModel):

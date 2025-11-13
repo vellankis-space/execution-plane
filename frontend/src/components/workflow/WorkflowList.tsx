@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus, Play, Trash2, Edit } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 
 interface Workflow {
   workflow_id: string;
@@ -16,6 +17,7 @@ interface Workflow {
 export function WorkflowList() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchWorkflows();
@@ -123,7 +125,7 @@ export function WorkflowList() {
             {workflows.length} {workflows.length === 1 ? 'workflow' : 'workflows'} configured
           </p>
         </div>
-        <Button>
+        <Button onClick={() => navigate('/production-workflow')}>
           <Plus className="w-4 h-4 mr-2" />
           Create Workflow
         </Button>
@@ -171,7 +173,12 @@ export function WorkflowList() {
                       <Play className="w-4 h-4 mr-1" />
                       Run
                     </Button>
-                    <Button variant="outline" size="sm" className="h-8 px-3">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="h-8 px-3"
+                      onClick={() => navigate(`/workflow-builder?id=${workflow.workflow_id}`)}
+                    >
                       <Edit className="w-4 h-4 mr-1" />
                       Edit
                     </Button>

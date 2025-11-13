@@ -3,7 +3,6 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
 
 interface Execution {
   execution_id: string;
@@ -144,11 +143,19 @@ export function ExecutionTimeline() {
                   </div>
                   <div className="text-sm text-muted-foreground space-y-1">
                     <p>
-                      Started: {format(new Date(exec.started_at), "PPpp")}
+                      Started: {new Date(exec.started_at).toLocaleString('en-IN', { 
+                        timeZone: 'Asia/Kolkata',
+                        dateStyle: 'medium',
+                        timeStyle: 'medium'
+                      })} IST
                     </p>
                     {exec.completed_at && (
                       <p>
-                        Completed: {format(new Date(exec.completed_at), "PPpp")}
+                        Completed: {new Date(exec.completed_at).toLocaleString('en-IN', { 
+                          timeZone: 'Asia/Kolkata',
+                          dateStyle: 'medium',
+                          timeStyle: 'medium'
+                        })} IST
                       </p>
                     )}
                     {exec.step_count !== undefined && (

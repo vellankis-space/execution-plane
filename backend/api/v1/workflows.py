@@ -143,7 +143,8 @@ async def execute_workflow_with_langgraph(
         langgraph_service = LangGraphWorkflowService(db)
         final_state = await langgraph_service.execute_langgraph_workflow(
             workflow_definition=workflow.definition,
-            input_data=execution_data.input_data or {}
+            input_data=execution_data.input_data or {},
+            workflow_name=workflow.name
         )
         
         return {

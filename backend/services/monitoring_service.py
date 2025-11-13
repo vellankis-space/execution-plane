@@ -7,6 +7,7 @@ from collections import defaultdict
 
 from models.workflow import WorkflowExecution, StepExecution
 from schemas.workflow import WorkflowExecutionResponse
+from utils.timezone_utils import now_ist, to_ist_isoformat, utc_to_ist
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -37,8 +38,8 @@ class MonitoringService:
                     "workflow_id": exec.workflow_id,
                     "workflow_name": workflow.name if workflow else "Unknown",
                     "status": exec.status,
-                    "started_at": exec.started_at.isoformat() if exec.started_at else exec.created_at.isoformat(),
-                    "completed_at": exec.completed_at.isoformat() if exec.completed_at else None,
+                    "started_at": to_ist_isoformat(exec.started_at) if exec.started_at else to_ist_isoformat(exec.created_at),
+                    "completed_at": to_ist_isoformat(exec.completed_at) if exec.completed_at else None,
                     "execution_time": exec.execution_time,
                     "step_count": exec.step_count,
                     "success_count": exec.success_count,
@@ -115,9 +116,9 @@ class MonitoringService:
                     "execution_id": execution.execution_id,
                     "workflow_id": execution.workflow_id,
                     "status": execution.status,
-                    "created_at": execution.created_at.isoformat() if execution.created_at else None,
-                    "started_at": execution.started_at.isoformat() if execution.started_at else None,
-                    "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+                    "created_at": to_ist_isoformat(execution.created_at),
+                    "started_at": to_ist_isoformat(execution.started_at),
+                    "completed_at": to_ist_isoformat(execution.completed_at),
                     "execution_time": execution.execution_time,
                 })
             
@@ -204,7 +205,7 @@ class MonitoringService:
                                             days: int = 30) -> Dict[str, Any]:
         """Get a comprehensive performance report for a workflow"""
         try:
-            end_time = datetime.utcnow()
+            end_time = now_ist()
             start_time = end_time - timedelta(days=days)
             
             # Get workflow execution metrics
@@ -240,8 +241,8 @@ class MonitoringService:
                 recent_execution_data.append({
                     "execution_id": execution.execution_id,
                     "status": execution.status,
-                    "started_at": execution.started_at.isoformat() if execution.started_at else None,
-                    "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+                    "started_at": to_ist_isoformat(execution.started_at),
+                    "completed_at": to_ist_isoformat(execution.completed_at),
                     "duration": (execution.completed_at - execution.started_at).total_seconds() if execution.started_at and execution.completed_at else None,
                     "step_count": len(execution.step_executions),
                     "failed_steps": len([s for s in execution.step_executions if s.status == "failed"])
@@ -250,8 +251,8 @@ class MonitoringService:
             return {
                 "workflow_id": workflow_id,
                 "period": {
-                    "start": start_time.isoformat(),
-                    "end": end_time.isoformat(),
+                    "start": to_ist_isoformat(start_time),
+                    "end": to_ist_isoformat(end_time),
                     "days": days
                 },
                 "workflow_metrics": workflow_metrics,
@@ -309,7 +310,7 @@ class MonitoringService:
                 avg_execution_time = total_time / len(completed_with_time)
             
             # Get recent failed executions (last 24 hours)
-            twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
+            twenty_four_hours_ago = now_ist() - timedelta(hours=24)
             recent_failed_executions = self.db.query(func.count(WorkflowExecution.id)).filter(
                 and_(
                     WorkflowExecution.status == "failed",
@@ -355,7 +356,7 @@ class MonitoringService:
                                            days: int = 30) -> Dict[str, Any]:
         """Get detailed analytics for a specific workflow"""
         try:
-            end_time = datetime.utcnow()
+            end_time = now_ist()
             start_time = end_time - timedelta(days=days)
             
             # Get all executions for this workflow in the time period
@@ -371,8 +372,8 @@ class MonitoringService:
                 return {
                     "workflow_id": workflow_id,
                     "period": {
-                        "start": start_time.isoformat(),
-                        "end": end_time.isoformat(),
+                        "start": to_ist_isoformat(start_time),
+                        "end": to_ist_isoformat(end_time),
                         "days": days
                     },
                     "total_executions": 0,
@@ -462,8 +463,8 @@ class MonitoringService:
             return {
                 "workflow_id": workflow_id,
                 "period": {
-                    "start": start_time.isoformat(),
-                    "end": end_time.isoformat(),
+                    "start": to_ist_isoformat(start_time),
+                    "end": to_ist_isoformat(end_time),
                     "days": days
                 },
                 "total_executions": len(executions),
@@ -486,7 +487,7 @@ class MonitoringService:
             ).scalar()
             
             # Get recently started executions (last 5 minutes)
-            five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+            five_minutes_ago = now_ist() - timedelta(minutes=5)
             recent_executions = self.db.query(func.count(WorkflowExecution.id)).filter(
                 WorkflowExecution.created_at >= five_minutes_ago
             ).scalar()
@@ -500,7 +501,7 @@ class MonitoringService:
             failed_executions_last_hour = self.db.query(func.count(WorkflowExecution.id)).filter(
                 and_(
                     WorkflowExecution.status == "failed",
-                    WorkflowExecution.created_at >= datetime.utcnow() - timedelta(hours=1)
+                    WorkflowExecution.created_at >= now_ist() - timedelta(hours=1)
                 )
             ).scalar()
             
@@ -519,7 +520,7 @@ class MonitoringService:
                                            days: int = 30) -> Dict[str, Any]:
         """Compare metrics across multiple workflows"""
         try:
-            end_time = datetime.utcnow()
+            end_time = now_ist()
             start_time = end_time - timedelta(days=days)
             
             comparison_data = []
@@ -566,8 +567,8 @@ class MonitoringService:
             
             return {
                 "period": {
-                    "start": start_time.isoformat(),
-                    "end": end_time.isoformat(),
+                    "start": to_ist_isoformat(start_time),
+                    "end": to_ist_isoformat(end_time),
                     "days": days
                 },
                 "workflows": comparison_data

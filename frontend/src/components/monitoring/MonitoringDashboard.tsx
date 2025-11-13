@@ -75,7 +75,7 @@ export function MonitoringDashboard() {
       // Transform data for chart
       if (data.executions && Array.isArray(data.executions)) {
         return data.executions.slice(0, 20).map((exec: any) => ({
-          time: new Date(exec.created_at).toLocaleTimeString(),
+          time: new Date(exec.created_at).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
           execution_time: exec.execution_time || 0,
           status: exec.status === "completed" ? 1 : exec.status === "failed" ? -1 : 0,
         }));
@@ -236,7 +236,11 @@ export function MonitoringDashboard() {
                   <div>
                     <p className="font-medium">{exec.workflow_name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {new Date(exec.started_at).toLocaleString()}
+                      {new Date(exec.started_at).toLocaleString('en-IN', { 
+                        timeZone: 'Asia/Kolkata',
+                        dateStyle: 'medium',
+                        timeStyle: 'medium'
+                      })} IST
                     </p>
                   </div>
                 </div>

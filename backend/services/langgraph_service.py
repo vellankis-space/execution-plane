@@ -18,6 +18,7 @@ except ImportError:
     ToolNode = None
 
 from services.agent_service import AgentService
+from services.langfuse_integration import LangfuseIntegration
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -45,9 +46,59 @@ class LangGraphWorkflowService:
     def __init__(self, db: Session):
         self.db = db
         self.agent_service = AgentService(db)
+        self.langfuse = LangfuseIntegration()
         
         if not LANGGRAPH_AVAILABLE:
             logger.warning("LangGraph not installed. Install with: pip install langgraph")
+    
+    def _validate_workflow(self, steps: List[Dict[str, Any]], dependencies: Dict[str, List[str]]) -> tuple[bool, Optional[str]]:
+        """
+        Validate workflow structure for circular dependencies and missing steps.
+        
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        if not steps:
+            return False, "No steps defined in workflow"
+        
+        step_ids = {step["id"] for step in steps}
+        
+        # Check for missing step references in dependencies
+        for step_id, deps in dependencies.items():
+            if step_id not in step_ids:
+                return False, f"Dependency references non-existent step: {step_id}"
+            for dep in deps:
+                if dep not in step_ids:
+                    return False, f"Step '{step_id}' depends on non-existent step: {dep}"
+        
+        # Check for circular dependencies using topological sort approach
+        visited = set()
+        rec_stack = set()
+        
+        def has_cycle(node: str) -> bool:
+            visited.add(node)
+            rec_stack.add(node)
+            
+            # Get nodes that this node depends on
+            node_deps = dependencies.get(node, [])
+            for dep in node_deps:
+                if dep not in visited:
+                    if has_cycle(dep):
+                        return True
+                elif dep in rec_stack:
+                    return True
+            
+            rec_stack.remove(node)
+            return False
+        
+        # Check for cycles starting from each node
+        for step in steps:
+            step_id = step["id"]
+            if step_id not in visited:
+                if has_cycle(step_id):
+                    return False, f"Circular dependency detected involving step: {step_id}"
+        
+        return True, None
     
     def create_langgraph_from_workflow(self, workflow_definition: Dict[str, Any]) -> Optional[StateGraph]:
         """
@@ -69,6 +120,12 @@ class LangGraphWorkflowService:
         steps = workflow_definition.get("steps", [])
         dependencies = workflow_definition.get("dependencies", {}) or {}
         conditions = workflow_definition.get("conditions", {}) or {}
+        
+        # Validate workflow structure
+        is_valid, error_msg = self._validate_workflow(steps, dependencies)
+        if not is_valid:
+            logger.error(f"Workflow validation failed: {error_msg}")
+            raise ValueError(f"Invalid workflow structure: {error_msg}")
         
         # Create a mapping of step_id to step definition
         step_map = {step["id"]: step for step in steps}
@@ -184,22 +241,48 @@ class LangGraphWorkflowService:
     
     async def _execute_agent_node(self, step: Dict[str, Any], state: WorkflowState) -> Dict[str, Any]:
         """Execute agent node - call AI agent"""
+        # Get agent_id from step data or directly from step
         agent_id = step.get("agent_id")
+        if not agent_id and "data" in step:
+            agent_id = step["data"].get("agent_id")
+        
         if not agent_id:
-            return {"error": "No agent_id specified"}
+            logger.error(f"No agent_id found in step: {step}")
+            return {"error": "No agent_id specified in step configuration"}
+        
+        logger.info(f"Executing agent node with agent_id: {agent_id}")
         
         # Prepare agent input from state
         agent_input = self._prepare_agent_input(step, state)
         
+        logger.info(f"Agent input prepared: {agent_input}")
+        
         # Execute agent
         try:
+            # Convert agent_input dict to string for agent service
+            if isinstance(agent_input, dict):
+                # Check for common input fields
+                input_text = (
+                    agent_input.get("query") or 
+                    agent_input.get("input") or 
+                    agent_input.get("text") or 
+                    agent_input.get("message") or
+                    str(agent_input)
+                )
+            else:
+                input_text = str(agent_input)
+            
+            logger.info(f"Calling agent with input: {input_text[:100]}...")
+            
             result = await self.agent_service.execute_agent(
                 agent_id=agent_id,
-                input_data=agent_input
+                input_text=input_text
             )
-            return {"output": result}
+            logger.info(f"Agent execution completed successfully")
+            return {"output": result, "agent_id": agent_id, "input": input_text}
         except Exception as e:
-            return {"error": str(e)}
+            logger.error(f"Agent execution failed: {str(e)}")
+            return {"error": str(e), "agent_id": agent_id}
     
     async def _execute_condition_node(self, step: Dict[str, Any], state: WorkflowState) -> Dict[str, Any]:
         """Execute condition node - evaluate condition"""
@@ -370,11 +453,11 @@ class LangGraphWorkflowService:
             if step.get("type") == "start":
                 return step["id"]
         
-        # Otherwise find node with no dependencies
+        # Otherwise find node with no dependencies (not in dependencies dict as a key)
         for step in steps:
             step_id = step["id"]
-            has_dependencies = any(step_id in deps for deps in dependencies.values())
-            if not has_dependencies:
+            # A node has no dependencies if it's not a key in the dependencies dict
+            if step_id not in dependencies:
                 return step_id
         
         # Return first step as fallback
@@ -420,15 +503,17 @@ class LangGraphWorkflowService:
         self,
         workflow_definition: Dict[str, Any],
         input_data: Dict[str, Any],
-        config: Optional[Dict[str, Any]] = None
+        config: Optional[Dict[str, Any]] = None,
+        workflow_name: str = "LangGraph Workflow"
     ) -> Dict[str, Any]:
         """
-        Execute a workflow using LangGraph.
+        Execute a workflow using LangGraph with monitoring.
         
         Args:
             workflow_definition: Visual workflow definition
             input_data: Input data for the workflow
             config: Optional configuration (e.g., checkpointer, recursion_limit)
+            workflow_name: Name of the workflow for tracing
             
         Returns:
             Final workflow state
@@ -436,47 +521,82 @@ class LangGraphWorkflowService:
         if not LANGGRAPH_AVAILABLE:
             raise Exception("LangGraph not installed. Install with: pip install langgraph")
         
-        # Create LangGraph from workflow definition
-        graph = self.create_langgraph_from_workflow(workflow_definition)
+        execution_id = str(uuid.uuid4())
+        workflow_id = workflow_definition.get("workflow_id", "unknown")
         
-        if not graph:
-            raise Exception("Failed to create LangGraph")
-        
-        # Set up checkpointer for state persistence
-        checkpointer = MemorySaver()
-        
-        # Compile the graph
-        app = graph.compile(checkpointer=checkpointer)
-        
-        # Initialize state
-        initial_state: WorkflowState = {
-            "messages": [],
-            "context": {},
-            "input_data": input_data,
-            "current_step": "",
-            "completed_steps": [],
-            "failed_steps": [],
-            "step_results": {},
-            "error": None,
-            "metadata": {
-                "started_at": datetime.utcnow().isoformat(),
-                "workflow_id": workflow_definition.get("workflow_id")
-            }
-        }
-        
-        # Execute the graph
-        thread_id = str(uuid.uuid4())
-        config = config or {"configurable": {"thread_id": thread_id}}
+        # Start Langfuse trace
+        trace = None
+        try:
+            trace = self.langfuse.trace_workflow_execution(
+                workflow_id=workflow_id,
+                execution_id=execution_id,
+                metadata={
+                    "workflow_name": workflow_name,
+                    "engine": "langgraph",
+                    "input_data": input_data
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Could not create Langfuse trace: {e}")
         
         try:
+            logger.info(f"Starting LangGraph workflow execution: {execution_id}")
+            
+            # Create LangGraph from workflow definition
+            graph = self.create_langgraph_from_workflow(workflow_definition)
+            
+            if not graph:
+                raise Exception("Failed to create LangGraph")
+            
+            # Set up checkpointer for state persistence
+            checkpointer = MemorySaver()
+            
+            # Compile the graph
+            app = graph.compile(checkpointer=checkpointer)
+            
+            # Initialize state
+            initial_state: WorkflowState = {
+                "messages": [],
+                "context": {},
+                "input_data": input_data,
+                "current_step": "",
+                "completed_steps": [],
+                "failed_steps": [],
+                "step_results": {},
+                "error": None,
+                "metadata": {
+                    "started_at": datetime.utcnow().isoformat(),
+                    "workflow_id": workflow_definition.get("workflow_id"),
+                    "execution_id": execution_id,
+                    "trace_id": trace.id if trace else None
+                }
+            }
+            
+            # Execute the graph
+            thread_id = str(uuid.uuid4())
+            config = config or {"configurable": {"thread_id": thread_id}}
+            
+            logger.info(f"Invoking LangGraph with thread_id: {thread_id}")
             final_state = await app.ainvoke(initial_state, config)
             
             # Add completion metadata
             final_state["metadata"]["completed_at"] = datetime.utcnow().isoformat()
             final_state["metadata"]["success"] = len(final_state["failed_steps"]) == 0
             
+            # Calculate duration
+            started_at = datetime.fromisoformat(final_state["metadata"]["started_at"])
+            completed_at = datetime.fromisoformat(final_state["metadata"]["completed_at"])
+            duration_ms = int((completed_at - started_at).total_seconds() * 1000)
+            
+            logger.info(f"LangGraph execution completed in {duration_ms}ms")
+            logger.info(f"Completed steps: {final_state['completed_steps']}")
+            logger.info(f"Failed steps: {final_state['failed_steps']}")
+            
+            # Langfuse trace is automatically tracked and flushed
+            logger.info(f"Langfuse trace ID: {trace.id if trace and hasattr(trace, 'id') else 'N/A'}")
+            
             return final_state
             
         except Exception as e:
-            logger.error(f"LangGraph execution error: {str(e)}")
+            logger.error(f"LangGraph execution error: {str(e)}", exc_info=True)
             raise

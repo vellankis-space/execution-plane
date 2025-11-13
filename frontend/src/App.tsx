@@ -7,6 +7,7 @@ import { ThemeProvider } from "next-themes";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import Index from "./pages/Index";
 import Chat from "./pages/Chat";
+import Agents from "./pages/Agents";
 import Workflows from "./pages/Workflows";
 import Monitoring from "./pages/Monitoring";
 import Audit from "./pages/Audit";
@@ -54,6 +55,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Chat />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/agents"
+                element={
+                  <ProtectedRoute>
+                    <Agents />
                   </ProtectedRoute>
                 }
               />

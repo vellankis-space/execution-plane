@@ -14,6 +14,7 @@ from services.enhanced_monitoring_service import EnhancedMonitoringService
 from services.tracing_service import TracingService
 from services.langfuse_integration import LangfuseIntegration
 from core.database import get_db
+from utils.timezone_utils import now_ist, to_ist_isoformat
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ async def broadcast_metrics_update(data: Dict[str, Any]):
     """Broadcast metrics update to all connected WebSocket clients"""
     message = json.dumps({
         "type": "metrics_update",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": to_ist_isoformat(now_ist()),
         "data": data
     })
     
@@ -90,7 +91,7 @@ async def websocket_metrics(websocket: WebSocket):
                         
                         await websocket.send_text(json.dumps({
                             "type": "update",
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": to_ist_isoformat(now_ist()),
                             "data": real_time_metrics
                         }))
                     finally:
@@ -148,8 +149,8 @@ async def websocket_execution_updates(websocket: WebSocket, execution_id: str):
                         "type": "status_update",
                         "execution_id": execution_id,
                         "status": current_status,
-                        "started_at": execution.started_at.isoformat() if execution.started_at else None,
-                        "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+                        "started_at": to_ist_isoformat(execution.started_at),
+                        "completed_at": to_ist_isoformat(execution.completed_at),
                         "execution_time": execution.execution_time,
                         "error_message": execution.error_message,
                         "steps": [
@@ -157,8 +158,8 @@ async def websocket_execution_updates(websocket: WebSocket, execution_id: str):
                                 "step_id": step.step_id,
                                 "agent_id": step.agent_id,
                                 "status": step.status,
-                                "started_at": step.started_at.isoformat() if step.started_at else None,
-                                "completed_at": step.completed_at.isoformat() if step.completed_at else None,
+                                "started_at": to_ist_isoformat(step.started_at),
+                                "completed_at": to_ist_isoformat(step.completed_at),
                                 "error_message": step.error_message
                             }
                             for step in steps
@@ -232,8 +233,8 @@ async def get_traces(
                 "trace_id": exec.execution_id,
                 "workflow_id": exec.workflow_id,
                 "status": exec.status,
-                "start_time": exec.started_at.isoformat() if exec.started_at else None,
-                "end_time": exec.completed_at.isoformat() if exec.completed_at else None,
+                "start_time": to_ist_isoformat(exec.started_at),
+                "end_time": to_ist_isoformat(exec.completed_at),
                 "duration": exec.execution_time,
                 "spans": [
                     {
@@ -241,8 +242,8 @@ async def get_traces(
                         "name": f"Step: {step.step_id}",
                         "agent_id": step.agent_id,
                         "status": step.status,
-                        "start_time": step.started_at.isoformat() if step.started_at else None,
-                        "end_time": step.completed_at.isoformat() if step.completed_at else None,
+                        "start_time": to_ist_isoformat(step.started_at),
+                        "end_time": to_ist_isoformat(step.completed_at),
                         "duration": step.execution_time,
                         "attributes": {
                             "error": step.error_message if step.status == "failed" else None
@@ -290,8 +291,8 @@ async def get_trace_detail(
             "trace_id": trace_id,
             "workflow_id": execution.workflow_id,
             "status": execution.status,
-            "start_time": execution.started_at.isoformat() if execution.started_at else None,
-            "end_time": execution.completed_at.isoformat() if execution.completed_at else None,
+            "start_time": to_ist_isoformat(execution.started_at),
+            "end_time": to_ist_isoformat(execution.completed_at),
             "duration": execution.execution_time,
             "input_data": execution.input_data,
             "output_data": execution.output_data,
@@ -302,8 +303,8 @@ async def get_trace_detail(
                     "name": f"Step: {step.step_id}",
                     "agent_id": step.agent_id,
                     "status": step.status,
-                    "start_time": step.started_at.isoformat() if step.started_at else None,
-                    "end_time": step.completed_at.isoformat() if step.completed_at else None,
+                    "start_time": to_ist_isoformat(step.started_at),
+                    "end_time": to_ist_isoformat(step.completed_at),
                     "duration": step.execution_time,
                     "input_data": step.input_data,
                     "output_data": step.output_data,
@@ -319,7 +320,7 @@ async def get_trace_detail(
             ],
             "logs": [
                 {
-                    "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+                    "timestamp": to_ist_isoformat(log.timestamp),
                     "level": log.log_level,
                     "message": log.message,
                     "metadata": log.log_metadata
@@ -365,7 +366,7 @@ async def get_streaming_metrics(
                     enhanced_metrics = {}
                 
                 data = {
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": to_ist_isoformat(now_ist()),
                     "real_time": real_time,
                     "health": health,
                     "workflow_metrics": workflow_metrics,
@@ -435,7 +436,7 @@ async def get_observability_overview(
         ).limit(10).all()
         
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": to_ist_isoformat(now_ist()),
             "system_health": health_metrics,
             "real_time_metrics": real_time_metrics,
             "langfuse_enabled": langfuse.enabled,
@@ -445,7 +446,7 @@ async def get_observability_overview(
                     "trace_id": exec.execution_id,
                     "workflow_id": exec.workflow_id,
                     "status": exec.status,
-                    "started_at": exec.started_at.isoformat() if exec.started_at else None
+                    "started_at": to_ist_isoformat(exec.started_at)
                 }
                 for exec in recent_executions
             ],

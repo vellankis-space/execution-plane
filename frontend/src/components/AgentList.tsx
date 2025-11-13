@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Trash2, Bot, RefreshCw, MessageSquare, Plus } from "lucide-react";
+import { Trash2, Bot, RefreshCw, MessageSquare, Plus, Edit } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 
@@ -189,6 +189,15 @@ export function AgentList({ onAgentDeleted }: AgentListProps) {
                   </Button>
                 </div>
                 <div className="flex gap-2 pt-3 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 gap-2"
+                    onClick={() => navigate(`/playground?id=${agent.agent_id}`)}
+                  >
+                    <Edit className="w-4 h-4" />
+                    Edit
+                  </Button>
                   <Button
                     variant="default"
                     size="sm"

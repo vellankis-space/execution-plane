@@ -38,7 +38,7 @@ import { Save, Play, Trash2, Download, Upload, ZoomIn, ZoomOut, Home } from "luc
 import { toast } from "@/hooks/use-toast";
 import { nodeTypes } from "./CustomNodes";
 import { NodePalette } from "./NodePalette";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 interface Agent {
   agent_id: string;
@@ -47,6 +47,10 @@ interface Agent {
 
 export function NoCodeWorkflowBuilder() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editWorkflowId = searchParams.get('id');
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [loading, setLoading] = useState(false);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   
@@ -75,6 +79,75 @@ export function NoCodeWorkflowBuilder() {
         });
       });
   }, []);
+
+  // Fetch workflow data if in edit mode
+  useEffect(() => {
+    const fetchWorkflowData = async () => {
+      if (editWorkflowId) {
+        setLoading(true);
+        try {
+          const response = await fetch(`http://localhost:8000/api/v1/workflows/${editWorkflowId}`);
+          if (response.ok) {
+            const workflow = await response.json();
+            setIsEditMode(true);
+            setWorkflowName(workflow.name || "");
+            setWorkflowDescription(workflow.description || "");
+            
+            // Load workflow definition if available
+            if (workflow.definition) {
+              const definition = typeof workflow.definition === 'string' 
+                ? JSON.parse(workflow.definition) 
+                : workflow.definition;
+              
+              if (definition.steps && Array.isArray(definition.steps)) {
+                const loadedNodes = definition.steps.map((step: any) => ({
+                  id: step.id,
+                  type: step.type || "agentNode",
+                  position: step.position || { x: 100, y: 100 },
+                  data: step.data || { label: step.name, agent_id: step.agent_id, description: step.description },
+                }));
+                setNodes(loadedNodes);
+              }
+              
+              if (definition.dependencies) {
+                const loadedEdges: Edge[] = [];
+                Object.entries(definition.dependencies).forEach(([target, sources]: [string, any]) => {
+                  if (Array.isArray(sources)) {
+                    sources.forEach((source) => {
+                      loadedEdges.push({
+                        id: `${source}-${target}`,
+                        source,
+                        target,
+                        type: "smoothstep",
+                        animated: true,
+                      });
+                    });
+                  }
+                });
+                setEdges(loadedEdges);
+              }
+            }
+          } else {
+            toast({
+              title: "Error",
+              description: "Failed to load workflow data",
+              variant: "destructive",
+            });
+          }
+        } catch (error) {
+          console.error("Error fetching workflow:", error);
+          toast({
+            title: "Error",
+            description: "Failed to load workflow data",
+            variant: "destructive",
+          });
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    fetchWorkflowData();
+  }, [editWorkflowId, setNodes, setEdges]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -218,8 +291,13 @@ export function NoCodeWorkflowBuilder() {
     };
 
     try {
-      const response = await fetch("http://localhost:8000/api/v1/workflows", {
-        method: "POST",
+      const url = isEditMode
+        ? `http://localhost:8000/api/v1/workflows/${editWorkflowId}`
+        : "http://localhost:8000/api/v1/workflows";
+      const method = isEditMode ? "PUT" : "POST";
+      
+      const response = await fetch(url, {
+        method: method,
         headers: {
           "Content-Type": "application/json",
         },
@@ -228,18 +306,23 @@ export function NoCodeWorkflowBuilder() {
 
       if (response.ok) {
         toast({
-          title: "Workflow Saved",
-          description: "Your workflow has been saved successfully.",
+          title: isEditMode ? "Workflow Updated" : "Workflow Saved",
+          description: isEditMode 
+            ? "Your workflow has been updated successfully."
+            : "Your workflow has been saved successfully.",
         });
+        if (isEditMode) {
+          navigate('/workflows');
+        }
       } else {
         const error = await response.json();
-        throw new Error(error.detail || "Failed to save workflow");
+        throw new Error(error.detail || (isEditMode ? "Failed to update workflow" : "Failed to save workflow"));
       }
     } catch (error: any) {
-      console.error("Error saving workflow:", error);
+      console.error(isEditMode ? "Error updating workflow:" : "Error saving workflow:", error);
       toast({
-        title: "Error Saving Workflow",
-        description: error.message || "Failed to save workflow. Please try again.",
+        title: isEditMode ? "Error Updating Workflow" : "Error Saving Workflow",
+        description: error.message || (isEditMode ? "Failed to update workflow. Please try again." : "Failed to save workflow. Please try again."),
         variant: "destructive",
       });
     }
@@ -311,9 +394,9 @@ export function NoCodeWorkflowBuilder() {
       <Card className="rounded-none border-x-0 border-t-0 p-4">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold">No-Code Workflow Builder</h1>
+            <h1 className="text-2xl font-bold">{isEditMode ? 'Edit Workflow' : 'No-Code Workflow Builder'}</h1>
             <p className="text-sm text-muted-foreground">
-              Visually design your AI agent workflows
+              {isEditMode ? 'Update your workflow design' : 'Visually design your AI agent workflows'}
             </p>
           </div>
           <div className="flex gap-2">
@@ -358,9 +441,9 @@ export function NoCodeWorkflowBuilder() {
           {/* Toolbar */}
           <div className="p-3 border-b flex items-center justify-between bg-muted/30">
             <div className="flex gap-2">
-              <Button onClick={handleSaveWorkflow} size="sm">
+              <Button onClick={handleSaveWorkflow} size="sm" disabled={loading}>
                 <Save className="w-4 h-4 mr-2" />
-                Save Workflow
+                {loading ? 'Loading...' : (isEditMode ? 'Update Workflow' : 'Save Workflow')}
               </Button>
               <Button onClick={exportWorkflow} variant="outline" size="sm">
                 <Download className="w-4 h-4 mr-2" />
