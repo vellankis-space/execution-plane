@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Trash2, Bot, RefreshCw, MessageSquare, Plus, Edit } from "lucide-react";
+import { Trash2, Brain, RefreshCw, MessageSquare, Plus, Edit } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 
@@ -117,10 +117,9 @@ export function AgentList({ onAgentDeleted }: AgentListProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between border-b pb-4">
+      <div className="flex items-center justify-between pb-4">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight">Your Agents</h2>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-sm text-muted-foreground">
             {agents.length} {agents.length === 1 ? 'agent' : 'agents'} configured
           </p>
         </div>
@@ -135,43 +134,43 @@ export function AgentList({ onAgentDeleted }: AgentListProps) {
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Refresh</span>
           </Button>
-          <Button
-            size="sm"
-            onClick={() => navigate('/playground')}
-            className="gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Create Agent
-          </Button>
         </div>
       </div>
       {agents.length === 0 ? (
-        <Card className="border-dashed">
+        <Card className="border-dashed border-border/50 bg-card/50">
           <div className="p-12 text-center">
-            <div className="w-16 h-16 rounded-full bg-muted mx-auto mb-4 flex items-center justify-center">
-              <Bot className="w-8 h-8 text-muted-foreground" />
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 mx-auto mb-4 flex items-center justify-center">
+              <Brain className="w-8 h-8 text-blue-500" />
             </div>
-            <p className="text-muted-foreground text-sm">No agents created yet. Create your first agent above!</p>
+            <h3 className="font-semibold text-lg mb-2">No agents yet</h3>
+            <p className="text-muted-foreground text-sm mb-6">
+              Create your first AI agent to get started
+            </p>
+            <Button onClick={() => navigate('/playground')} className="shine-effect">
+              <Plus className="w-4 h-4 mr-2" />
+              Create Agent
+            </Button>
           </div>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {agents.map((agent) => (
             <Card 
               key={agent.agent_id} 
-              className="group hover:shadow-lg transition-all duration-200 hover:border-primary/50 overflow-hidden h-full"
+              className="group relative overflow-hidden border-border/50 bg-gradient-to-br from-card to-card/50 hover:shadow-2xl transition-all duration-300 hover:scale-[1.02] h-full"
             >
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-4 min-w-0 flex-1">
-                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center flex-shrink-0 shadow-sm">
-                      <Bot className="w-6 h-6 text-primary-foreground" />
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="p-6 relative">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/25 group-hover:scale-110 transition-transform">
+                      <Brain className="w-6 h-6 text-white" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <h3 className="font-semibold text-lg group-hover:text-primary transition-colors truncate">
                         {agent.name || "Unnamed Agent"}
                       </h3>
-                      <p className="text-sm text-muted-foreground capitalize mt-1 truncate">
+                      <p className="text-xs text-muted-foreground capitalize mt-1 truncate">
                         {agent.agent_type || "Unknown Type"}
                       </p>
                     </div>
@@ -183,25 +182,37 @@ export function AgentList({ onAgentDeleted }: AgentListProps) {
                       e.stopPropagation();
                       handleDeleteAgent(agent.agent_id, agent.name);
                     }}
-                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2"
+                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 h-8 w-8"
                   >
-                    <Trash2 className="w-5 h-5" />
+                    <Trash2 className="w-4 h-4" />
                   </Button>
                 </div>
-                <div className="flex gap-2 pt-3 border-t">
+                
+                {/* Agent Metadata */}
+                <div className="space-y-2 mb-4 text-xs">
+                  <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50">
+                    <span className="text-muted-foreground">Model</span>
+                    <span className="font-medium">{agent.llm_model}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50">
+                    <span className="text-muted-foreground">Tools</span>
+                    <span className="font-medium">{agent.tools?.length || 0}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-4 border-t border-border/50">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 gap-2"
+                    className="flex-1 gap-2 hover:bg-primary/10 hover:border-primary/50"
                     onClick={() => navigate(`/playground?id=${agent.agent_id}`)}
                   >
                     <Edit className="w-4 h-4" />
                     Edit
                   </Button>
                   <Button
-                    variant="default"
                     size="sm"
-                    className="flex-1 gap-2"
+                    className="flex-1 gap-2 bg-gradient-to-r from-primary to-primary/90 shine-effect"
                     onClick={() => navigate('/chat')}
                   >
                     <MessageSquare className="w-4 h-4" />

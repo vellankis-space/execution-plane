@@ -557,8 +557,8 @@ export function ProductionWorkflowBuilder() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
-        <div className="w-80 border-r bg-muted/30 flex flex-col">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+        <div className="w-80 border-r bg-muted/30 flex flex-col min-h-0">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
             <TabsList className="grid w-full grid-cols-4 m-2">
               <TabsTrigger value="canvas">Nodes</TabsTrigger>
               <TabsTrigger value="triggers">
@@ -572,21 +572,21 @@ export function ProductionWorkflowBuilder() {
               </TabsTrigger>
             </TabsList>
 
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-hidden">
               <TabsContent value="canvas" className="m-0 h-full">
                 <NodePalette />
               </TabsContent>
-              <TabsContent value="triggers" className="p-4">
+              <TabsContent value="triggers" className="p-4 h-full overflow-auto">
                 <WorkflowTriggers
                   workflowId={workflowId}
                   triggers={triggers}
                   onTriggersChange={setTriggers}
                 />
               </TabsContent>
-              <TabsContent value="credentials" className="p-4">
+              <TabsContent value="credentials" className="p-4 h-full overflow-auto">
                 <CredentialsManager />
               </TabsContent>
-              <TabsContent value="history" className="p-4">
+              <TabsContent value="history" className="p-4 h-full overflow-auto">
                 <ExecutionHistory workflowId={workflowId} />
               </TabsContent>
             </div>
