@@ -16,6 +16,40 @@ class MonitoringService:
     def __init__(self, db: Session):
         self.db = db
 
+    async def get_recent_executions(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Get recent workflow executions"""
+        try:
+            from models.workflow import Workflow
+            
+            executions = self.db.query(WorkflowExecution).order_by(
+                WorkflowExecution.created_at.desc()
+            ).limit(limit).all()
+            
+            result = []
+            for exec in executions:
+                # Get workflow name
+                workflow = self.db.query(Workflow).filter(
+                    Workflow.workflow_id == exec.workflow_id
+                ).first()
+                
+                result.append({
+                    "execution_id": exec.execution_id,
+                    "workflow_id": exec.workflow_id,
+                    "workflow_name": workflow.name if workflow else "Unknown",
+                    "status": exec.status,
+                    "started_at": exec.started_at.isoformat() if exec.started_at else exec.created_at.isoformat(),
+                    "completed_at": exec.completed_at.isoformat() if exec.completed_at else None,
+                    "execution_time": exec.execution_time,
+                    "step_count": exec.step_count,
+                    "success_count": exec.success_count,
+                    "failure_count": exec.failure_count,
+                })
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error getting recent executions: {str(e)}")
+            raise
+    
     async def get_workflow_execution_metrics(self, workflow_id: Optional[str] = None, 
                                            start_time: Optional[datetime] = None,
                                            end_time: Optional[datetime] = None) -> Dict[str, Any]:
@@ -74,12 +108,26 @@ class MonitoringService:
                 for date, count in sorted(executions_by_day.items())
             ]
             
+            # Include execution details for charting
+            execution_details = []
+            for execution in executions[:50]:  # Limit to 50 for performance
+                execution_details.append({
+                    "execution_id": execution.execution_id,
+                    "workflow_id": execution.workflow_id,
+                    "status": execution.status,
+                    "created_at": execution.created_at.isoformat() if execution.created_at else None,
+                    "started_at": execution.started_at.isoformat() if execution.started_at else None,
+                    "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+                    "execution_time": execution.execution_time,
+                })
+            
             return {
                 "total_executions": total_executions,
                 "success_rate": round(success_rate * 100, 2),
                 "average_duration": round(average_duration, 2),
                 "executions_by_status": status_counts,
-                "executions_by_day": executions_by_day_list
+                "executions_by_day": executions_by_day_list,
+                "executions": execution_details  # Include execution details
             }
         except Exception as e:
             logger.error(f"Error getting workflow execution metrics: {str(e)}")
@@ -217,10 +265,48 @@ class MonitoringService:
     async def get_system_health_metrics(self) -> Dict[str, Any]:
         """Get overall system health metrics"""
         try:
+            from models.workflow import Workflow
+            from models.agent import Agent as AgentModel
+            
             # Get total counts
-            total_workflows = self.db.query(func.count(WorkflowExecution.id)).scalar()
-            total_executions = self.db.query(func.count(WorkflowExecution.id)).scalar()
-            total_step_executions = self.db.query(func.count(StepExecution.id)).scalar()
+            total_workflows = self.db.query(func.count(Workflow.id)).scalar() or 0
+            total_agents = self.db.query(func.count(AgentModel.id)).scalar() or 0
+            total_executions = self.db.query(func.count(WorkflowExecution.id)).scalar() or 0
+            
+            # Get active counts
+            active_workflows = self.db.query(func.count(Workflow.id)).filter(
+                Workflow.is_active == True
+            ).scalar() or 0
+            
+            # Get execution status counts
+            running_executions = self.db.query(func.count(WorkflowExecution.id)).filter(
+                WorkflowExecution.status == "running"
+            ).scalar() or 0
+            
+            completed_executions = self.db.query(func.count(WorkflowExecution.id)).filter(
+                WorkflowExecution.status == "completed"
+            ).scalar() or 0
+            
+            failed_executions = self.db.query(func.count(WorkflowExecution.id)).filter(
+                WorkflowExecution.status == "failed"
+            ).scalar() or 0
+            
+            # Calculate success rate
+            total_completed_or_failed = completed_executions + failed_executions
+            success_rate = (completed_executions / total_completed_or_failed * 100) if total_completed_or_failed > 0 else 0
+            
+            # Calculate average execution time
+            completed_with_time = self.db.query(WorkflowExecution).filter(
+                and_(
+                    WorkflowExecution.status == "completed",
+                    WorkflowExecution.execution_time.isnot(None)
+                )
+            ).all()
+            
+            avg_execution_time = 0
+            if completed_with_time:
+                total_time = sum(exec.execution_time or 0 for exec in completed_with_time)
+                avg_execution_time = total_time / len(completed_with_time)
             
             # Get recent failed executions (last 24 hours)
             twenty_four_hours_ago = datetime.utcnow() - timedelta(hours=24)
@@ -229,7 +315,7 @@ class MonitoringService:
                     WorkflowExecution.status == "failed",
                     WorkflowExecution.created_at >= twenty_four_hours_ago
                 )
-            ).scalar()
+            ).scalar() or 0
             
             # Get recent failed steps (last 24 hours)
             recent_failed_steps = self.db.query(func.count(StepExecution.id)).join(WorkflowExecution).filter(
@@ -237,15 +323,29 @@ class MonitoringService:
                     StepExecution.status == "failed",
                     WorkflowExecution.created_at >= twenty_four_hours_ago
                 )
-            ).scalar()
+            ).scalar() or 0
+            
+            # Determine health status
+            health_status = "healthy"
+            if recent_failed_executions >= 5 or recent_failed_steps >= 10 or success_rate < 80:
+                health_status = "critical"
+            elif recent_failed_executions >= 2 or recent_failed_steps >= 5 or success_rate < 90:
+                health_status = "warning"
             
             return {
+                "total_agents": total_agents,
+                "active_agents": total_agents,  # For now, assume all agents are active
                 "total_workflows": total_workflows,
+                "active_workflows": active_workflows,
                 "total_executions": total_executions,
-                "total_step_executions": total_step_executions,
+                "running_executions": running_executions,
+                "completed_executions": completed_executions,
+                "failed_executions": failed_executions,
+                "success_rate": round(success_rate, 2),
+                "avg_execution_time": round(avg_execution_time, 2),
                 "recent_failed_executions_24h": recent_failed_executions,
                 "recent_failed_steps_24h": recent_failed_steps,
-                "health_status": "healthy" if recent_failed_executions < 5 and recent_failed_steps < 10 else "degraded"
+                "health_status": health_status
             }
         except Exception as e:
             logger.error(f"Error getting system health metrics: {str(e)}")

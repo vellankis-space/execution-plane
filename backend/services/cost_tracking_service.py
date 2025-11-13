@@ -1,120 +1,402 @@
+"""
+Cost tracking service for API usage and cost analytics
+"""
+import uuid
 import logging
-from typing import Dict, Any, Optional
+from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from datetime import datetime
+from sqlalchemy import func, and_, or_
+from datetime import datetime, timedelta
+
+from models.cost_tracking import APICall, CostBudget, CostAlert
+from models.agent import Agent as AgentModel
+from services.langfuse_integration import LangfuseIntegration
 
 logger = logging.getLogger(__name__)
 
 
+# Pricing per 1M tokens (as of 2024, approximate)
+PRICING = {
+    "openai": {
+        "gpt-4": {"input": 30.0, "output": 60.0},
+        "gpt-4-turbo": {"input": 10.0, "output": 30.0},
+        "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
+        "gpt-4o": {"input": 5.0, "output": 15.0},
+    },
+    "anthropic": {
+        "claude-3-opus": {"input": 15.0, "output": 75.0},
+        "claude-3-sonnet": {"input": 3.0, "output": 15.0},
+        "claude-3-haiku": {"input": 0.25, "output": 1.25},
+        "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
+    },
+    "groq": {
+        "llama-3-70b": {"input": 0.59, "output": 0.79},
+        "mixtral-8x7b": {"input": 0.24, "output": 0.24},
+    },
+}
+
+
 class CostTrackingService:
-    """Service for tracking costs associated with workflow executions"""
+    """Service for tracking API costs and usage"""
     
-    def __init__(self, db: Optional[Session] = None):
+    def __init__(self, db: Session):
         self.db = db
-        # In a production environment, you would initialize cost tracking with
-        # your specific cost calculation logic and external APIs
+        self.langfuse = LangfuseIntegration()  # For enhanced cost tracking
     
-    async def calculate_execution_cost(self, execution_id: str, 
-                                    resource_usage: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Calculate the cost of a workflow execution based on resource usage.
-        
-        Args:
-            execution_id: The ID of the workflow execution
-            resource_usage: Dictionary containing resource usage metrics
+    def calculate_cost(
+        self,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int
+    ) -> float:
+        """Calculate cost for an API call"""
+        try:
+            provider_pricing = PRICING.get(provider.lower(), {})
+            model_pricing = provider_pricing.get(model.lower(), {})
             
-        Returns:
-            Dictionary with cost breakdown
-        """
-        # This is a simplified cost calculation model
-        # In a real implementation, you would integrate with cloud provider APIs
-        # to get actual costs for compute, storage, API calls, etc.
-        
-        # Extract resource metrics
-        memory_mb = resource_usage.get("memory_change_mb", 0)
-        cpu_percent = resource_usage.get("cpu_change_percent", 0)
-        execution_time = resource_usage.get("execution_time", 0)  # seconds
-        
-        # Simplified cost calculation (example values)
-        # These would be based on your actual infrastructure costs
-        memory_cost = abs(memory_mb) * 0.00001  # $ per MB
-        cpu_cost = cpu_percent * 0.0001  # $ per CPU percent
-        time_cost = execution_time * 0.00005  # $ per second
-        
-        total_cost = memory_cost + cpu_cost + time_cost
-        
-        cost_breakdown = {
-            "execution_id": execution_id,
-            "total_cost": round(total_cost, 6),
-            "cost_breakdown": {
-                "memory_cost": round(memory_cost, 6),
-                "cpu_cost": round(cpu_cost, 6),
-                "time_cost": round(time_cost, 6)
-            },
-            "currency": "USD",
-            "calculated_at": datetime.utcnow().isoformat()
-        }
-        
-        logger.info(f"Cost calculated for execution {execution_id}: ${total_cost:.6f}")
-        return cost_breakdown
+            if not model_pricing:
+                # Default pricing if model not found
+                logger.warning(f"Pricing not found for {provider}/{model}, using defaults")
+                input_price = 1.0  # $1 per 1M tokens
+                output_price = 2.0  # $2 per 1M tokens
+            else:
+                input_price = model_pricing.get("input", 1.0)
+                output_price = model_pricing.get("output", 2.0)
+            
+            # Calculate cost: (tokens / 1,000,000) * price_per_1M
+            input_cost = (input_tokens / 1_000_000) * input_price
+            output_cost = (output_tokens / 1_000_000) * output_price
+            total_cost = input_cost + output_cost
+            
+            return round(total_cost, 6)  # Round to 6 decimal places
+        except Exception as e:
+            logger.error(f"Error calculating cost: {str(e)}")
+            return 0.0
     
-    async def track_llm_api_cost(self, model_name: str, prompt_tokens: int, 
-                               completion_tokens: int) -> float:
-        """
-        Track and calculate cost for LLM API usage.
+    async def track_api_call(
+        self,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        agent_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        execution_id: Optional[str] = None,
+        call_type: str = "chat",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> APICall:
+        """Track an API call and calculate cost"""
+        call_id = str(uuid.uuid4())
+        total_tokens = input_tokens + output_tokens
+        cost = self.calculate_cost(provider, model, input_tokens, output_tokens)
         
-        Args:
-            model_name: Name of the LLM model used
-            prompt_tokens: Number of tokens in the prompt
-            completion_tokens: Number of tokens in the completion
-            
-        Returns:
-            Cost in USD
-        """
-        # Simplified pricing model - in reality, you would use actual pricing from providers
-        pricing = {
-            "gpt-4": {"prompt": 0.03 / 1000, "completion": 0.06 / 1000},
-            "gpt-3.5-turbo": {"prompt": 0.0015 / 1000, "completion": 0.002 / 1000},
-            "claude-2": {"prompt": 0.008 / 1000, "completion": 0.024 / 1000},
-            "llama3-70b": {"prompt": 0.0005 / 1000, "completion": 0.0008 / 1000}
-        }
+        # Try to get accurate token counts from Langfuse if available
+        if self.langfuse.enabled and metadata and "langfuse_generation_id" in metadata:
+            try:
+                # Langfuse provides accurate token counts
+                # This would be populated from Langfuse callback
+                langfuse_tokens = metadata.get("langfuse_tokens", {})
+                if langfuse_tokens:
+                    input_tokens = langfuse_tokens.get("input_tokens", input_tokens)
+                    output_tokens = langfuse_tokens.get("output_tokens", output_tokens)
+                    total_tokens = input_tokens + output_tokens
+                    # Recalculate cost with accurate tokens
+                    cost = self.calculate_cost(provider, model, input_tokens, output_tokens)
+            except Exception as e:
+                logger.warning(f"Error getting Langfuse token counts: {e}")
         
-        model_pricing = pricing.get(model_name, {"prompt": 0.01 / 1000, "completion": 0.02 / 1000})
+        api_call = APICall(
+            call_id=call_id,
+            agent_id=agent_id,
+            workflow_id=workflow_id,
+            execution_id=execution_id,
+            provider=provider,
+            model=model,
+            call_type=call_type,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cost=cost,
+            metadata=metadata or {}
+        )
         
-        prompt_cost = prompt_tokens * model_pricing["prompt"]
-        completion_cost = completion_tokens * model_pricing["completion"]
-        total_cost = prompt_cost + completion_cost
+        self.db.add(api_call)
+        self.db.commit()
+        self.db.refresh(api_call)
         
-        logger.info(f"LLM API cost for {model_name}: ${total_cost:.6f} "
-                   f"(prompt: {prompt_tokens} tokens, completion: {completion_tokens} tokens)")
+        # Check budgets and create alerts if needed
+        await self._check_budgets(api_call)
         
-        return total_cost
+        return api_call
     
-    async def get_execution_cost_report(self, execution_id: str) -> Dict[str, Any]:
-        """
-        Generate a detailed cost report for a workflow execution.
+    async def get_cost_summary(
+        self,
+        agent_id: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Get cost summary for a time period"""
+        query = self.db.query(APICall)
         
-        Args:
-            execution_id: The ID of the workflow execution
-            
-        Returns:
-            Dictionary with detailed cost report
-        """
-        # In a real implementation, you would query your cost tracking database
-        # to get all cost data for the execution
+        if agent_id:
+            query = query.filter(APICall.agent_id == agent_id)
         
-        report = {
-            "execution_id": execution_id,
-            "total_cost": 0.0,
-            "cost_breakdown": {
-                "compute": 0.0,
-                "storage": 0.0,
-                "network": 0.0,
-                "llm_apis": 0.0,
-                "external_services": 0.0
-            },
-            "currency": "USD",
-            "generated_at": datetime.utcnow().isoformat()
+        if workflow_id:
+            query = query.filter(APICall.workflow_id == workflow_id)
+        
+        if start_date:
+            query = query.filter(APICall.created_at >= start_date)
+        
+        if end_date:
+            query = query.filter(APICall.created_at <= end_date)
+        
+        calls = query.all()
+        
+        total_cost = sum(call.cost for call in calls)
+        total_tokens = sum(call.total_tokens for call in calls)
+        total_calls = len(calls)
+        
+        # Group by provider
+        by_provider = {}
+        for call in calls:
+            provider = call.provider
+            if provider not in by_provider:
+                by_provider[provider] = {
+                    "cost": 0.0,
+                    "tokens": 0,
+                    "calls": 0
+                }
+            by_provider[provider]["cost"] += call.cost
+            by_provider[provider]["tokens"] += call.total_tokens
+            by_provider[provider]["calls"] += 1
+        
+        # Group by model
+        by_model = {}
+        for call in calls:
+            model_key = f"{call.provider}/{call.model}"
+            if model_key not in by_model:
+                by_model[model_key] = {
+                    "cost": 0.0,
+                    "tokens": 0,
+                    "calls": 0
+                }
+            by_model[model_key]["cost"] += call.cost
+            by_model[model_key]["tokens"] += call.total_tokens
+            by_model[model_key]["calls"] += 1
+        
+        return {
+            "total_cost": round(total_cost, 2),
+            "total_tokens": total_tokens,
+            "total_calls": total_calls,
+            "by_provider": by_provider,
+            "by_model": by_model,
+            "period": {
+                "start": start_date.isoformat() if start_date else None,
+                "end": end_date.isoformat() if end_date else None,
+            }
         }
+    
+    async def get_cost_trends(
+        self,
+        days: int = 30,
+        agent_id: Optional[str] = None,
+        workflow_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get cost trends over time"""
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
         
-        return report
+        query = self.db.query(APICall)
+        
+        if agent_id:
+            query = query.filter(APICall.agent_id == agent_id)
+        
+        if workflow_id:
+            query = query.filter(APICall.workflow_id == workflow_id)
+        
+        query = query.filter(
+            and_(
+                APICall.created_at >= start_date,
+                APICall.created_at <= end_date
+            )
+        )
+        
+        calls = query.all()
+        
+        # Group by day
+        daily_costs = {}
+        for call in calls:
+            day = call.created_at.date().isoformat()
+            if day not in daily_costs:
+                daily_costs[day] = {
+                    "date": day,
+                    "cost": 0.0,
+                    "tokens": 0,
+                    "calls": 0
+                }
+            daily_costs[day]["cost"] += call.cost
+            daily_costs[day]["tokens"] += call.total_tokens
+            daily_costs[day]["calls"] += 1
+        
+        return sorted(daily_costs.values(), key=lambda x: x["date"])
+    
+    async def _check_budgets(self, api_call: APICall):
+        """Check if API call triggers any budget alerts"""
+        # Get active budgets
+        budgets = self.db.query(CostBudget).filter(
+            CostBudget.enabled == True
+        ).all()
+        
+        for budget in budgets:
+            # Calculate current period cost
+            period_start = budget.period_start or datetime.utcnow().replace(day=1)
+            period_end = budget.period_end or datetime.utcnow()
+            
+            current_cost = self.db.query(func.sum(APICall.cost)).filter(
+                and_(
+                    APICall.created_at >= period_start,
+                    APICall.created_at <= period_end
+                )
+            ).scalar() or 0.0
+            
+            percentage_used = (current_cost / budget.amount * 100) if budget.amount > 0 else 0
+            
+            # Check if threshold exceeded
+            if percentage_used >= (budget.alert_threshold * 100):
+                # Check if alert already exists
+                existing_alert = self.db.query(CostAlert).filter(
+                    and_(
+                        CostAlert.budget_id == budget.budget_id,
+                        CostAlert.status == "active",
+                        CostAlert.alert_type == "budget_threshold"
+                    )
+                ).first()
+                
+                if not existing_alert:
+                    # Create alert
+                    alert = CostAlert(
+                        alert_id=str(uuid.uuid4()),
+                        budget_id=budget.budget_id,
+                        alert_type="budget_threshold",
+                        message=f"Budget threshold reached: {percentage_used:.1f}% of {budget.name}",
+                        current_cost=current_cost,
+                        budget_amount=budget.amount,
+                        percentage_used=percentage_used
+                    )
+                    self.db.add(alert)
+                    self.db.commit()
+            
+            # Check if budget exceeded
+            if current_cost > budget.amount:
+                existing_alert = self.db.query(CostAlert).filter(
+                    and_(
+                        CostAlert.budget_id == budget.budget_id,
+                        CostAlert.status == "active",
+                        CostAlert.alert_type == "budget_exceeded"
+                    )
+                ).first()
+                
+                if not existing_alert:
+                    alert = CostAlert(
+                        alert_id=str(uuid.uuid4()),
+                        budget_id=budget.budget_id,
+                        alert_type="budget_exceeded",
+                        message=f"Budget exceeded: ${current_cost:.2f} of ${budget.amount:.2f} for {budget.name}",
+                        current_cost=current_cost,
+                        budget_amount=budget.amount,
+                        percentage_used=percentage_used
+                    )
+                    self.db.add(alert)
+                    self.db.commit()
+    
+    # Budget Management
+    
+    async def create_budget(
+        self,
+        name: str,
+        budget_type: str,
+        amount: float,
+        alert_threshold: float = 0.8,
+        description: Optional[str] = None,
+        enabled: bool = True
+    ) -> CostBudget:
+        """Create a cost budget"""
+        budget_id = str(uuid.uuid4())
+        
+        # Calculate period based on budget type
+        now = datetime.utcnow()
+        if budget_type == "daily":
+            period_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            period_end = period_start + timedelta(days=1)
+        elif budget_type == "weekly":
+            period_start = now - timedelta(days=now.weekday())
+            period_start = period_start.replace(hour=0, minute=0, second=0, microsecond=0)
+            period_end = period_start + timedelta(days=7)
+        elif budget_type == "monthly":
+            period_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            if period_start.month == 12:
+                period_end = period_start.replace(year=period_start.year + 1, month=1)
+            else:
+                period_end = period_start.replace(month=period_start.month + 1)
+        else:  # total
+            period_start = None
+            period_end = None
+        
+        budget = CostBudget(
+            budget_id=budget_id,
+            name=name,
+            description=description,
+            budget_type=budget_type,
+            amount=amount,
+            period_start=period_start,
+            period_end=period_end,
+            alert_threshold=alert_threshold,
+            enabled=enabled
+        )
+        
+        self.db.add(budget)
+        self.db.commit()
+        self.db.refresh(budget)
+        
+        return budget
+    
+    async def get_budgets(self) -> List[CostBudget]:
+        """Get all budgets"""
+        return self.db.query(CostBudget).all()
+    
+    async def get_budget_status(self, budget_id: str) -> Dict[str, Any]:
+        """Get current status of a budget"""
+        budget = self.db.query(CostBudget).filter(
+            CostBudget.budget_id == budget_id
+        ).first()
+        
+        if not budget:
+            raise ValueError("Budget not found")
+        
+        period_start = budget.period_start or datetime.utcnow().replace(day=1)
+        period_end = budget.period_end or datetime.utcnow()
+        
+        current_cost = self.db.query(func.sum(APICall.cost)).filter(
+            and_(
+                APICall.created_at >= period_start,
+                APICall.created_at <= period_end
+            )
+        ).scalar() or 0.0
+        
+        percentage_used = (current_cost / budget.amount * 100) if budget.amount > 0 else 0
+        remaining = budget.amount - current_cost
+        
+        return {
+            "budget_id": budget.budget_id,
+            "name": budget.name,
+            "budget_type": budget.budget_type,
+            "amount": budget.amount,
+            "current_cost": round(current_cost, 2),
+            "remaining": round(remaining, 2),
+            "percentage_used": round(percentage_used, 2),
+            "period_start": period_start.isoformat() if period_start else None,
+            "period_end": period_end.isoformat() if period_end else None,
+        }
+

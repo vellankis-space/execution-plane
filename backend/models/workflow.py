@@ -14,6 +14,8 @@ class Workflow(Base):
     definition = Column(JSON)  # Workflow definition in JSON format
     created_by = Column(String)  # User ID who created the workflow
     is_active = Column(Boolean, default=True)
+    version = Column(Integer, default=1)  # Version number for versioning
+    tenant_id = Column(String, index=True)  # For multi-tenancy isolation
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
@@ -42,6 +44,7 @@ class WorkflowExecution(Base):
     failure_count = Column(Integer)  # Number of failed steps
     retry_count = Column(Integer, default=0)  # Number of retries
     resource_usage = Column(JSON)  # Resource usage metrics (CPU, memory, etc.)
+    tenant_id = Column(String, index=True)  # For multi-tenancy isolation
     
     # Relationship to workflow
     workflow = relationship("Workflow", back_populates="executions")

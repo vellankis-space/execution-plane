@@ -72,3 +72,16 @@ async def get_system_health_metrics(db: Session = Depends(get_db)):
         return health_metrics
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/recent-executions")
+async def get_recent_executions(
+    limit: int = 20,
+    db: Session = Depends(get_db)
+):
+    """Get recent workflow executions"""
+    try:
+        monitoring_service = MonitoringService(db)
+        executions = await monitoring_service.get_recent_executions(limit=limit)
+        return executions
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

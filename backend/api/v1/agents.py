@@ -53,8 +53,9 @@ router = APIRouter()
 async def create_agent(agent_data: AgentCreate, db: Session = Depends(get_db)):
     """Create a new LangGraph agent"""
     try:
+        tenant_id = get_current_tenant_id()
         agent_service = AgentService(db)
-        agent = await agent_service.create_agent(agent_data)
+        agent = await agent_service.create_agent(agent_data, tenant_id=tenant_id)
         # Convert AgentInDB to AgentResponse to exclude sensitive fields
         return AgentResponse(**agent.model_dump())
     except Exception as e:
@@ -64,8 +65,9 @@ async def create_agent(agent_data: AgentCreate, db: Session = Depends(get_db)):
 async def get_agent(agent_id: str, db: Session = Depends(get_db)):
     """Get agent configuration by ID"""
     try:
+        tenant_id = get_current_tenant_id()
         agent_service = AgentService(db)
-        agent = await agent_service.get_agent(agent_id)
+        agent = await agent_service.get_agent(agent_id, tenant_id=tenant_id)
         if not agent:
             raise HTTPException(status_code=404, detail="Agent not found")
         # Convert AgentInDB to AgentResponse to exclude sensitive fields
@@ -77,8 +79,9 @@ async def get_agent(agent_id: str, db: Session = Depends(get_db)):
 async def get_agents(db: Session = Depends(get_db)):
     """Get all agents"""
     try:
+        tenant_id = get_current_tenant_id()
         agent_service = AgentService(db)
-        agents = await agent_service.get_agents()
+        agents = await agent_service.get_agents(tenant_id=tenant_id)
         # Convert AgentInDB to AgentResponse to exclude sensitive fields
         return [AgentResponse(**agent.model_dump()) for agent in agents]
     except Exception as e:
@@ -88,8 +91,9 @@ async def get_agents(db: Session = Depends(get_db)):
 async def delete_agent(agent_id: str, db: Session = Depends(get_db)):
     """Delete an agent"""
     try:
+        tenant_id = get_current_tenant_id()
         agent_service = AgentService(db)
-        success = await agent_service.delete_agent(agent_id)
+        success = await agent_service.delete_agent(agent_id, tenant_id=tenant_id)
         if not success:
             raise HTTPException(status_code=404, detail="Agent not found")
         return {"message": "Agent deleted successfully"}
@@ -124,15 +128,35 @@ async def chat_with_agent(agent_id: str, request: AgentChatRequest, db: Session 
 
 @router.websocket("/{agent_id}/stream")
 async def stream_agent(websocket: WebSocket, agent_id: str, db: Session = Depends(get_db)):
-    """WebSocket endpoint for streaming agent responses"""
+    """WebSocket endpoint for streaming agent responses using AG-UI Protocol"""
     try:
         await websocket.accept()
         agent_service = AgentService(db)
-        await agent_service.stream_agent(websocket, agent_id)
+        
+        # Wait for initial message from client (optional)
+        try:
+            # Wait for message with timeout
+            import asyncio
+            initial_data = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            data = json.loads(initial_data)
+            message = data.get("message", "")
+            session_id = data.get("session_id")
+        except (asyncio.TimeoutError, json.JSONDecodeError, KeyError):
+            # No initial message or invalid format, proceed without it
+            message = None
+            session_id = None
+        
+        await agent_service.stream_agent(websocket, agent_id, message=message, session_id=session_id)
     except Exception as e:
         try:
             # Check if websocket is still connected before trying to close
             if not websocket.client_state.name == "DISCONNECTED":
+                from services.ag_ui_protocol import AGUIProtocol
+                error_msg = AGUIProtocol.create_error(
+                    error=str(e),
+                    error_code="WEBSOCKET_ERROR"
+                )
+                await websocket.send_text(error_msg.to_json())
                 await websocket.close(code=1011, reason=str(e))
             else:
                 print(f"WebSocket already disconnected: {str(e)}")

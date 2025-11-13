@@ -1,5 +1,7 @@
 import uuid
 import json
+import os
+import logging
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from langgraph.graph import StateGraph, END
@@ -16,8 +18,12 @@ import hashlib
 import base64
 from cryptography.fernet import Fernet
 
+logger = logging.getLogger(__name__)
+
 from services.memory_service import MemoryService
 from services.tools_service import ToolsService
+from services.cost_tracking_service import CostTrackingService
+from services.llm_service import LLMService
 from middleware.pii_middleware import create_pii_middleware_from_config, PIIMiddleware
 
 from models.agent import Agent as AgentModel
@@ -38,6 +44,12 @@ class AgentService:
         
         # Initialize tools service for external tools
         self.tools_service = ToolsService()
+        
+        # Initialize cost tracking service
+        self.cost_service = CostTrackingService(db)
+        
+        # Initialize LLM service (with LiteLLM and Langfuse support)
+        self.llm_service = LLMService()
         
         # Ensure database schema compatibility (add columns if missing)
         try:
@@ -82,7 +94,7 @@ class AgentService:
         f = Fernet(self._encryption_key)
         return f.decrypt(encrypted_api_key.encode()).decode()
     
-    async def create_agent(self, agent_data: AgentCreate) -> AgentInDB:
+    async def create_agent(self, agent_data: AgentCreate, tenant_id: Optional[str] = None) -> AgentInDB:
         """Create a new agent in the database"""
         agent_id = str(uuid.uuid4())
         
@@ -107,7 +119,9 @@ class AgentService:
             human_in_loop=agent_data.human_in_loop,
             recursion_limit=agent_data.recursion_limit,
             api_key_encrypted=encrypted_api_key,
-            pii_config=agent_data.pii_config
+            pii_config=agent_data.pii_config,
+            version=1,  # Initial version
+            tenant_id=tenant_id  # Set tenant_id for isolation
         )
         
         self.db.add(db_agent)
@@ -117,21 +131,39 @@ class AgentService:
         
         return AgentInDB.model_validate(db_agent)
     
-    async def get_agent(self, agent_id: str) -> Optional[AgentInDB]:
-        """Retrieve an agent by ID"""
-        db_agent = self.db.query(AgentModel).filter(AgentModel.agent_id == agent_id).first()
+    async def get_agent(self, agent_id: str, tenant_id: Optional[str] = None) -> Optional[AgentInDB]:
+        """Retrieve an agent by ID, optionally filtered by tenant"""
+        query = self.db.query(AgentModel).filter(AgentModel.agent_id == agent_id)
+        
+        # Apply tenant filter if provided
+        if tenant_id:
+            query = query.filter(AgentModel.tenant_id == tenant_id)
+        
+        db_agent = query.first()
         if db_agent:
             return AgentInDB.model_validate(db_agent)
         return None
 
-    async def get_agents(self) -> List[AgentInDB]:
-        """Retrieve all agents"""
-        db_agents = self.db.query(AgentModel).all()
+    async def get_agents(self, tenant_id: Optional[str] = None) -> List[AgentInDB]:
+        """Retrieve all agents, optionally filtered by tenant"""
+        query = self.db.query(AgentModel)
+        
+        # Apply tenant filter if provided
+        if tenant_id:
+            query = query.filter(AgentModel.tenant_id == tenant_id)
+        
+        db_agents = query.all()
         return [AgentInDB.model_validate(agent) for agent in db_agents]
     
-    async def delete_agent(self, agent_id: str) -> bool:
-        """Delete an agent by ID"""
-        db_agent = self.db.query(AgentModel).filter(AgentModel.agent_id == agent_id).first()
+    async def delete_agent(self, agent_id: str, tenant_id: Optional[str] = None) -> bool:
+        """Delete an agent by ID, optionally filtered by tenant"""
+        query = self.db.query(AgentModel).filter(AgentModel.agent_id == agent_id)
+        
+        # Apply tenant filter if provided
+        if tenant_id:
+            query = query.filter(AgentModel.tenant_id == tenant_id)
+        
+        db_agent = query.first()
         if db_agent:
             self.db.delete(db_agent)
             self.db.commit()
@@ -206,7 +238,18 @@ class AgentService:
                 return f"Error communicating with the agent: {error_msg}"
     
     async def execute_agent(self, agent_id: str, input_text: str, session_id: Optional[str] = None) -> str:
-        """Execute an agent with the given input"""
+        """Execute an agent with optional Langfuse tracing"""
+        from services.langfuse_integration import LangfuseIntegration
+        
+        langfuse = LangfuseIntegration()
+        trace = None
+        
+        if langfuse.enabled:
+            trace = langfuse.trace_agent_execution(
+                agent_id=agent_id,
+                user_id=session_id,
+                metadata={"input": input_text[:100]}  # Truncate for metadata
+            )
         agent = await self.get_agent(agent_id)
         if not agent:
             raise ValueError("Agent not found")
@@ -364,13 +407,40 @@ class AgentService:
                 
             # Return the content if available, otherwise convert to string
             try:
+                response_text = None
                 if hasattr(final_message, 'content') and final_message.content is not None:
-                    return str(final_message.content)
+                    response_text = str(final_message.content)
                 elif isinstance(final_message, dict):
                     # If it's a dict, try to get content or convert to string
-                    return str(final_message.get('content', str(final_message)))
+                    response_text = str(final_message.get('content', str(final_message)))
                 else:
-                    return str(final_message)
+                    response_text = str(final_message)
+                
+                # Track cost (estimate based on input/output sizes)
+                # Rough estimation: ~4 characters per token
+                try:
+                    input_tokens = len(filtered_input) // 4
+                    output_tokens = len(response_text) // 4
+                    
+                    # Track API call
+                    await self.cost_service.track_api_call(
+                        provider=agent.llm_provider,
+                        model=agent.llm_model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        agent_id=agent_id,
+                        workflow_id=None,  # Will be set if called from workflow
+                        execution_id=None,  # Will be set if called from workflow
+                        call_type="chat",
+                        metadata={
+                            "agent_type": agent.agent_type,
+                            "estimated": True
+                        }
+                    )
+                except Exception as cost_error:
+                    logger.warning(f"Error tracking cost: {str(cost_error)}")
+                
+                return response_text
             except Exception as e:
                 # Fallback to string representation
                 return str(final_message)
@@ -381,19 +451,178 @@ class AgentService:
             traceback.print_exc()
             raise ValueError(f"An unexpected error occurred while processing your request: {str(e)}")
     
-    async def stream_agent(self, websocket, agent_id: str):
-        """Stream agent responses via WebSocket"""
+    async def stream_agent(self, websocket, agent_id: str, message: Optional[str] = None, session_id: Optional[str] = None):
+        """Stream agent responses via WebSocket using AG-UI Protocol"""
+        from services.ag_ui_protocol import AGUIProtocol, AGUIEventType
+        import uuid
+        
         agent = await self.get_agent(agent_id)
         if not agent:
-            await websocket.send_text(json.dumps({"error": "Agent not found"}))
+            error_msg = AGUIProtocol.create_error(
+                error="Agent not found",
+                error_code="AGENT_NOT_FOUND",
+                session_id=session_id
+            )
+            await websocket.send_text(error_msg.to_json())
             await websocket.close()
             return
         
-        # For streaming, we would implement a callback mechanism
-        # This is a simplified version - in practice, you'd need to handle
-        # the streaming properly with LangGraph's streaming capabilities
-        await websocket.send_text(json.dumps({"status": "Streaming not fully implemented in this example"}))
-        await websocket.close()
+        run_id = str(uuid.uuid4())
+        session_id = session_id or f"session_{run_id}"
+        
+        try:
+            # Send RUN_STARTED event
+            run_started = AGUIProtocol.create_run_started(
+                run_id=run_id,
+                session_id=session_id,
+                metadata={"agent_id": agent_id, "agent_name": agent.name}
+            )
+            await websocket.send_text(run_started.to_json())
+            
+            # If message provided, process it
+            if message:
+                # Send user message
+                user_msg = AGUIProtocol.create_text_message(
+                    content=message,
+                    run_id=run_id,
+                    session_id=session_id,
+                    role="user"
+                )
+                await websocket.send_text(user_msg.to_json())
+                
+                # Execute agent with streaming
+                response = await self._execute_agent_with_streaming(
+                    agent_id=agent_id,
+                    input_text=message,
+                    session_id=session_id,
+                    websocket=websocket,
+                    run_id=run_id
+                )
+            
+            # Send RUN_FINISHED event
+            run_finished = AGUIProtocol.create_run_finished(
+                run_id=run_id,
+                session_id=session_id
+            )
+            await websocket.send_text(run_finished.to_json())
+            
+        except Exception as e:
+            logger.error(f"Error in stream_agent: {e}")
+            error_msg = AGUIProtocol.create_error(
+                error=str(e),
+                error_code="EXECUTION_ERROR",
+                run_id=run_id,
+                session_id=session_id
+            )
+            await websocket.send_text(error_msg.to_json())
+        finally:
+            await websocket.close()
+    
+    async def _execute_agent_with_streaming(
+        self,
+        agent_id: str,
+        input_text: str,
+        session_id: str,
+        websocket,
+        run_id: str
+    ) -> str:
+        """Execute agent with AG-UI Protocol streaming"""
+        from services.ag_ui_protocol import AGUIProtocol
+        
+        agent = await self.get_agent(agent_id)
+        if not agent:
+            raise ValueError("Agent not found")
+        
+        # Apply PII filtering if configured
+        filtered_input = input_text
+        if agent.pii_config:
+            pii_middleware = create_pii_middleware_from_config(agent.pii_config)
+            if pii_middleware:
+                filtered_input = pii_middleware.process_message(input_text, message_type="input")
+        
+        # Create agent graph
+        memory_context = ""
+        if self.memory_service.is_enabled():
+            try:
+                memories = self.memory_service.search_memory(
+                    query=filtered_input,
+                    user_id=session_id,
+                    agent_id=agent_id,
+                    top_k=3
+                )
+                if memories:
+                    memory_context = "\n".join([m.get("memory", "") for m in memories])
+            except Exception as e:
+                logger.warning(f"Error retrieving memory: {e}")
+        
+        agent_graph = self._create_langgraph_agent(agent, memory_context)
+        
+        # Execute with streaming callback
+        accumulated_response = ""
+        
+        async def stream_callback(chunk: str):
+            """Callback for streaming chunks"""
+            nonlocal accumulated_response
+            accumulated_response += chunk
+            
+            # Send stream chunk via AG-UI Protocol
+            chunk_msg = AGUIProtocol.create_stream_chunk(
+                chunk=chunk,
+                run_id=run_id,
+                session_id=session_id,
+                is_final=False
+            )
+            await websocket.send_text(chunk_msg.to_json())
+        
+        try:
+            # Execute agent (this would need to be adapted for actual streaming)
+            # For now, we'll simulate streaming
+            response = await self.execute_agent(agent_id, filtered_input, session_id)
+            
+            # Send response as text message
+            text_msg = AGUIProtocol.create_text_message(
+                content=response,
+                run_id=run_id,
+                session_id=session_id,
+                role="assistant"
+            )
+            await websocket.send_text(text_msg.to_json())
+            
+            # Apply PII filtering to output if configured
+            if agent.pii_config:
+                pii_middleware = create_pii_middleware_from_config(agent.pii_config)
+                if pii_middleware:
+                    response = pii_middleware.process_message(response, message_type="output")
+            
+            # Store in memory if enabled
+            if self.memory_service.is_enabled():
+                try:
+                    interaction = [
+                        {"role": "user", "content": input_text},
+                        {"role": "assistant", "content": response}
+                    ]
+                    self.memory_service.add_memory(
+                        interaction,
+                        user_id=session_id,
+                        agent_id=agent_id,
+                        llm_provider=agent.llm_provider,
+                        llm_model=agent.llm_model
+                    )
+                except Exception as e:
+                    logger.warning(f"Error storing memory: {e}")
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error executing agent: {e}")
+            error_msg = AGUIProtocol.create_error(
+                error=str(e),
+                error_code="AGENT_EXECUTION_ERROR",
+                run_id=run_id,
+                session_id=session_id
+            )
+            await websocket.send_text(error_msg.to_json())
+            raise
     
     def _create_langgraph_agent(self, agent_config: AgentInDB, memory_context: str = ""):
         """Create a LangGraph agent based on the configuration"""
@@ -425,6 +654,24 @@ class AgentService:
     
     def _initialize_llm(self, provider: str, model: str, temperature: float, user_api_key: Optional[str] = None):
         """Initialize the LLM based on provider and user API key"""
+        # Use LLMService which supports LiteLLM and Langfuse
+        use_litellm = os.getenv("USE_LITELLM", "true").lower() == "true"
+        
+        try:
+            return self.llm_service.initialize_llm(
+                provider=provider,
+                model=model,
+                temperature=temperature,
+                user_api_key=user_api_key,
+                use_litellm=use_litellm
+            )
+        except Exception as e:
+            logger.warning(f"Error initializing LLM with LLMService: {e}, falling back to direct")
+            # Fallback to direct initialization
+            return self._initialize_llm_direct(provider, model, temperature, user_api_key)
+    
+    def _initialize_llm_direct(self, provider: str, model: str, temperature: float, user_api_key: Optional[str] = None):
+        """Direct LLM initialization (fallback)"""
         # Use user-provided API key if available, otherwise fall back to system keys
         openai_api_key = user_api_key or settings.OPENAI_API_KEY
         anthropic_api_key = user_api_key or settings.ANTHROPIC_API_KEY

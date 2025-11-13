@@ -26,7 +26,7 @@ class WorkflowService:
         self.db = db
         self.langfuse = LangfuseIntegration()  # For workflow tracing
 
-    async def create_workflow(self, workflow_data: WorkflowCreate, user_id: Optional[str] = None) -> Workflow:
+    async def create_workflow(self, workflow_data: WorkflowCreate, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> Workflow:
         """Create a new workflow"""
         workflow_id = str(uuid.uuid4())
         
@@ -36,7 +36,8 @@ class WorkflowService:
             description=workflow_data.description,
             definition=workflow_data.definition,
             created_by=user_id,
-            version=1  # Initial version
+            version=1,  # Initial version
+            tenant_id=tenant_id  # Set tenant_id for isolation
         )
         
         self.db.add(db_workflow)
@@ -45,13 +46,25 @@ class WorkflowService:
         
         return db_workflow
 
-    async def get_workflow(self, workflow_id: str) -> Optional[Workflow]:
-        """Retrieve a workflow by ID"""
-        return self.db.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
+    async def get_workflow(self, workflow_id: str, tenant_id: Optional[str] = None) -> Optional[Workflow]:
+        """Retrieve a workflow by ID, optionally filtered by tenant"""
+        query = self.db.query(Workflow).filter(Workflow.workflow_id == workflow_id)
+        
+        # Apply tenant filter if provided
+        if tenant_id:
+            query = query.filter(Workflow.tenant_id == tenant_id)
+        
+        return query.first()
 
-    async def get_workflows(self, skip: int = 0, limit: int = 100) -> List[Workflow]:
-        """Retrieve all workflows"""
-        return self.db.query(Workflow).offset(skip).limit(limit).all()
+    async def get_workflows(self, skip: int = 0, limit: int = 100, tenant_id: Optional[str] = None) -> List[Workflow]:
+        """Retrieve all workflows, optionally filtered by tenant"""
+        query = self.db.query(Workflow)
+        
+        # Apply tenant filter if provided
+        if tenant_id:
+            query = query.filter(Workflow.tenant_id == tenant_id)
+        
+        return query.offset(skip).limit(limit).all()
 
     async def update_workflow(self, workflow_id: str, workflow_data: WorkflowUpdate) -> Optional[Workflow]:
         """Update a workflow"""
@@ -79,15 +92,24 @@ class WorkflowService:
         self.db.commit()
         return True
 
-    async def create_workflow_execution(self, execution_data: WorkflowExecutionCreate) -> WorkflowExecution:
+    async def create_workflow_execution(self, execution_data: WorkflowExecutionCreate, tenant_id: Optional[str] = None) -> WorkflowExecution:
         """Create a new workflow execution"""
         execution_id = str(uuid.uuid4())
+        
+        # Get workflow to inherit tenant_id
+        workflow = await self.get_workflow(execution_data.workflow_id, tenant_id=tenant_id)
+        if not workflow:
+            raise ValueError("Workflow not found")
+        
+        # Use workflow's tenant_id or provided tenant_id
+        execution_tenant_id = tenant_id or getattr(workflow, 'tenant_id', None)
         
         db_execution = WorkflowExecution(
             execution_id=execution_id,
             workflow_id=execution_data.workflow_id,
             status="pending",
-            input_data=execution_data.input_data
+            input_data=execution_data.input_data,
+            tenant_id=execution_tenant_id  # Set tenant_id for isolation
         )
         
         self.db.add(db_execution)

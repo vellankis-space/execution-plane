@@ -8,6 +8,7 @@ from schemas.workflow import (
 )
 from services.workflow_service import WorkflowService
 from core.database import get_db
+from middleware.tenant_middleware import get_current_tenant_id
 
 router = APIRouter()
 
@@ -15,8 +16,9 @@ router = APIRouter()
 async def create_workflow(workflow_data: WorkflowCreate, db: Session = Depends(get_db)):
     """Create a new workflow"""
     try:
+        tenant_id = get_current_tenant_id()
         workflow_service = WorkflowService(db)
-        workflow = await workflow_service.create_workflow(workflow_data)
+        workflow = await workflow_service.create_workflow(workflow_data, tenant_id=tenant_id)
         return workflow
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -25,8 +27,9 @@ async def create_workflow(workflow_data: WorkflowCreate, db: Session = Depends(g
 async def get_workflow(workflow_id: str, db: Session = Depends(get_db)):
     """Get workflow by ID"""
     try:
+        tenant_id = get_current_tenant_id()
         workflow_service = WorkflowService(db)
-        workflow = await workflow_service.get_workflow(workflow_id)
+        workflow = await workflow_service.get_workflow(workflow_id, tenant_id=tenant_id)
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
         return workflow
@@ -37,8 +40,9 @@ async def get_workflow(workflow_id: str, db: Session = Depends(get_db)):
 async def get_workflows(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """Get all workflows"""
     try:
+        tenant_id = get_current_tenant_id()
         workflow_service = WorkflowService(db)
-        workflows = await workflow_service.get_workflows(skip, limit)
+        workflows = await workflow_service.get_workflows(skip, limit, tenant_id=tenant_id)
         return workflows
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -71,8 +75,9 @@ async def delete_workflow(workflow_id: str, db: Session = Depends(get_db)):
 async def execute_workflow(workflow_id: str, execution_data: WorkflowExecutionCreate, db: Session = Depends(get_db)):
     """Execute a workflow"""
     try:
+        tenant_id = get_current_tenant_id()
         workflow_service = WorkflowService(db)
-        execution = await workflow_service.execute_workflow(workflow_id, execution_data.input_data or {})
+        execution = await workflow_service.execute_workflow(workflow_id, execution_data.input_data or {}, tenant_id=tenant_id)
         return execution
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

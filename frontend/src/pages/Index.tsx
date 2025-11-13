@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Bot, Workflow, Plus, ArrowRight } from "lucide-react";
+import { Bot, Workflow, Plus, ArrowRight, Activity } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AgentList } from "@/components/AgentList";
+import { UserMenu } from "@/components/auth/UserMenu";
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<"agents" | "workflows">("agents");
@@ -17,13 +18,20 @@ export default function Index() {
             Build and manage agentic AI workflows
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <Button variant="outline" asChild>
+            <Link to="/monitoring">
+              <Activity className="w-4 h-4 mr-2" />
+              Monitoring
+            </Link>
+          </Button>
           <Button asChild>
             <Link to="/workflows">
               <Plus className="w-4 h-4 mr-2" />
               Create Workflow
             </Link>
           </Button>
+          <UserMenu />
         </div>
       </div>
 

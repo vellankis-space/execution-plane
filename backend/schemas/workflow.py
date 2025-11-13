@@ -10,6 +10,7 @@ class WorkflowStep(BaseModel):
     description: Optional[str] = ""
     input_mapping: Optional[Dict[str, str]] = None  # Map input fields from context
     position: Optional[Dict[str, float]] = None  # For visualization positioning (x, y coordinates)
+    retry_policy: Optional[Dict[str, Any]] = None  # Retry configuration: max_retries, initial_delay, max_delay, exponential_base
 
 
 class WorkflowDefinition(BaseModel):

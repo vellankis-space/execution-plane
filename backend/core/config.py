@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Mem0 API Key (for memory functionality)
     MEM0_API_KEY: str = os.getenv("MEM0_API_KEY", "")
     
+    # Redis settings (for caching and message queue)
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    
     class Config:
         case_sensitive = True
 

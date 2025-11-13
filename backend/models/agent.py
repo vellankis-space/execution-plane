@@ -22,5 +22,7 @@ class Agent(Base):
     recursion_limit = Column(Integer)
     api_key_encrypted = Column(String)  # Encrypted user API key
     pii_config = Column(JSON)  # PII configuration: allowed types, custom categories, strategy
+    version = Column(Integer, default=1)  # Version number for versioning
+    tenant_id = Column(String, index=True)  # For multi-tenancy isolation
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
