@@ -12,9 +12,9 @@ export default function Audit() {
               <FileText className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Audit Logs</h1>
+              <h1 className="text-2xl font-bold">Orchestration Audit Logs</h1>
               <p className="text-sm text-muted-foreground">
-                Comprehensive audit trail of all system activities
+                Comprehensive audit trail of all agent and workflow activities
               </p>
             </div>
           </div>

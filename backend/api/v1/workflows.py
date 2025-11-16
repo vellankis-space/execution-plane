@@ -52,8 +52,9 @@ async def get_workflows(skip: int = 0, limit: int = 100, db: Session = Depends(g
 async def update_workflow(workflow_id: str, workflow_data: WorkflowUpdate, db: Session = Depends(get_db)):
     """Update a workflow"""
     try:
+        tenant_id = get_current_tenant_id()
         workflow_service = WorkflowService(db)
-        workflow = await workflow_service.update_workflow(workflow_id, workflow_data)
+        workflow = await workflow_service.update_workflow(workflow_id, workflow_data, tenant_id=tenant_id)
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
         return workflow

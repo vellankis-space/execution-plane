@@ -382,9 +382,9 @@ export function NoCodeWorkflowBuilder() {
       <Card className="rounded-none border-x-0 border-t-0 p-4">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold">{isEditMode ? 'Edit Workflow' : 'No-Code Workflow Builder'}</h1>
+            <h1 className="text-2xl font-bold">{isEditMode ? 'Edit Workflow' : 'Workflow Orchestration Builder'}</h1>
             <p className="text-sm text-muted-foreground">
-              {isEditMode ? 'Update your workflow design' : 'Visually design your AI agent workflows'}
+              {isEditMode ? 'Update your workflow orchestration' : 'Visually design and orchestrate AI agent workflows'}
             </p>
           </div>
           <div className="flex gap-2">

@@ -88,6 +88,20 @@ async def get_agents(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.put("/{agent_id}", response_model=AgentResponse)
+async def update_agent(agent_id: str, agent_data: AgentCreate, db: Session = Depends(get_db)):
+    """Update an existing agent"""
+    try:
+        tenant_id = get_current_tenant_id()
+        agent_service = AgentService(db)
+        agent = await agent_service.update_agent(agent_id, agent_data, tenant_id=tenant_id)
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        # Convert AgentInDB to AgentResponse to exclude sensitive fields
+        return AgentResponse(**agent.model_dump())
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.delete("/{agent_id}")
 async def delete_agent(agent_id: str, db: Session = Depends(get_db)):
     """Delete an agent"""

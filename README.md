@@ -1,15 +1,17 @@
-# Mech Agent - AI Agent Builder
+# Orchestration Platform - AI Agent & Workflow Management
 
-Build and configure custom AI agents with advanced LangGraph capabilities. Select LLM providers, tools, and execution settings.
+Enterprise-grade orchestration platform for managing AI agents and workflows. Build, deploy, monitor, and scale intelligent automation with advanced LangGraph capabilities.
 
 ## Features
 
+- **Orchestration at Scale**: Coordinate multiple AI agents and complex workflows
 - **Multi-Provider Support**: OpenAI, Anthropic, Groq, and more
 - **Agent Architectures**: ReAct, Plan & Execute, Reflection, and Custom Graphs
+- **Workflow Builder**: Visual no-code workflow design and execution
 - **Tool Integration**: Tavily Search, Python REPL, Wikipedia, and more
-- **Real-time Streaming**: Stream agent responses via WebSocket
-- **Persistent Memory**: SQLite, PostgreSQL, and Redis support
-- **Theme Toggling**: Light/dark mode support
+- **Real-time Monitoring**: Comprehensive observability and metrics tracking
+- **Persistent Memory**: SQLite, PostgreSQL, Redis, and Qdrant vector storage
+- **Enterprise Ready**: Authentication, audit logs, and cost tracking
 
 ## Getting Started
 
@@ -25,7 +27,7 @@ Build and configure custom AI agents with advanced LangGraph capabilities. Selec
 1. Clone the repository:
    ```bash
    git clone <repository-url>
-   cd mech-agent
+   cd execution-plane
    ```
 
 2. Install frontend dependencies:
@@ -109,15 +111,25 @@ python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - `POST /api/v1/agents/{agent_id}/chat` - Chat with an agent
 - `WebSocket /api/v1/agents/{agent_id}/stream` - Stream agent responses
 
-## Development
+## Architecture
 
 ### Frontend
 
-Built with React, TypeScript, Vite, and shadcn/ui components.
+Built with React, TypeScript, Vite, and shadcn/ui components. Features a modern UI with:
+- Agent management and configuration
+- Visual workflow builder with ReactFlow
+- Real-time monitoring dashboard
+- Chat interface for agent interaction
+- Audit logging and cost tracking
 
 ### Backend
 
-Built with FastAPI, LangGraph, and SQLAlchemy.
+Built with FastAPI, LangGraph, and SQLAlchemy. Provides:
+- RESTful API for agent and workflow management
+- WebSocket support for real-time streaming
+- Vector memory integration with Qdrant
+- Multi-provider LLM support
+- Workflow orchestration engine
 
 ## Qdrant Memory Integration
 

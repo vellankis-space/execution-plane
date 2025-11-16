@@ -1,9 +1,17 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Plus, Network, Trash2, Edit, Play } from "lucide-react";
+import { Plus, Network, Trash2, Edit, Play, Send } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Workflow {
   workflow_id: string;
@@ -17,6 +25,10 @@ interface Workflow {
 export function WorkflowList() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [executeDialogOpen, setExecuteDialogOpen] = useState(false);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
+  const [inputMessage, setInputMessage] = useState("");
+  const [executing, setExecuting] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -76,24 +88,37 @@ export function WorkflowList() {
     }
   };
 
-  const handleExecuteWorkflow = async (workflowId: string) => {
+  const openExecuteDialog = (workflow: Workflow) => {
+    setSelectedWorkflow(workflow);
+    setInputMessage("");
+    setExecuteDialogOpen(true);
+  };
+
+  const handleExecuteWorkflow = async () => {
+    if (!selectedWorkflow) return;
+    
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/workflows/${workflowId}/execute`, {
+      setExecuting(true);
+      const response = await fetch(`http://localhost:8000/api/v1/workflows/${selectedWorkflow.workflow_id}/execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          workflow_id: workflowId,
-          input_data: {}
+          workflow_id: selectedWorkflow.workflow_id,
+          input_data: {
+            message: inputMessage || "Hello" // Default message if empty
+          }
         }),
       });
 
       if (response.ok) {
         toast({
           title: "Workflow Started",
-          description: "The workflow has been started successfully.",
+          description: `"${selectedWorkflow.name}" has been started successfully.`,
         });
+        setExecuteDialogOpen(false);
+        setInputMessage("");
       } else {
         const error = await response.json();
         throw new Error(error.detail || 'Failed to start workflow');
@@ -105,6 +130,8 @@ export function WorkflowList() {
         description: error.message || "Failed to execute workflow. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setExecuting(false);
     }
   };
 
@@ -186,7 +213,7 @@ export function WorkflowList() {
                   <Button 
                     size="sm" 
                     className="flex-1 gap-2 bg-gradient-to-r from-primary to-primary/90 shine-effect"
-                    onClick={() => handleExecuteWorkflow(workflow.workflow_id)}
+                    onClick={() => openExecuteDialog(workflow)}
                   >
                     <Play className="w-4 h-4" />
                     Run
@@ -206,6 +233,64 @@ export function WorkflowList() {
           ))}
         </div>
       )}
+
+      {/* Execute Workflow Dialog */}
+      <Dialog open={executeDialogOpen} onOpenChange={setExecuteDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Execute Workflow</DialogTitle>
+            <DialogDescription>
+              {selectedWorkflow?.name && `Provide an input message for "${selectedWorkflow.name}"`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Input Message</label>
+              <Textarea
+                placeholder="Type your message here... (e.g., 'Analyze this data' or 'Generate a report')"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                rows={4}
+                className="resize-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.ctrlKey && !executing) {
+                    handleExecuteWorkflow();
+                  }
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Press Ctrl+Enter to execute
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setExecuteDialogOpen(false)}
+                disabled={executing}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleExecuteWorkflow}
+                disabled={executing}
+                className="gap-2"
+              >
+                {executing ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
+                    Executing...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    Execute
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -12,6 +12,7 @@ class Workflow(Base):
     name = Column(String, index=True)
     description = Column(Text)
     definition = Column(JSON)  # Workflow definition in JSON format
+    # triggers = Column(JSON, nullable=True, default=[])  # Workflow triggers (webhooks, schedules, etc.) - UNCOMMENT AFTER RUNNING MIGRATION
     created_by = Column(String)  # User ID who created the workflow
     is_active = Column(Boolean, default=True)
     version = Column(Integer, default=1)  # Version number for versioning

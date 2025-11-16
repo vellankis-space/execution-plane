@@ -283,41 +283,67 @@ export const ErrorHandlerNode = ({ data, selected }: NodeProps) => {
   );
 };
 
-// Chat/Manual Trigger Node
+// Chat/Manual Trigger Node (n8n-inspired design)
 export const ChatNode = ({ data, selected }: NodeProps) => {
+  const hasMessage = data.welcomeMessage && data.welcomeMessage.trim().length > 0;
+  
   return (
     <div
-      className={`px-6 py-4 shadow-lg rounded-2xl border-2 ${
-        selected ? "border-blue-500 shadow-blue-300" : "border-cyan-400"
-      } bg-white dark:bg-gray-800`}
+      className={`px-5 py-4 shadow-lg rounded-xl border-2 transition-all ${
+        selected 
+          ? "border-cyan-500 shadow-cyan-200 dark:shadow-cyan-900/50 scale-105" 
+          : "border-cyan-300 dark:border-cyan-600 hover:border-cyan-400 dark:hover:border-cyan-500"
+      } bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-gray-800 dark:to-gray-900`}
+      style={{ minWidth: '200px' }}
     >
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 !bg-cyan-500"
+        className="w-3 h-3 !bg-cyan-500 border-2 border-white dark:border-gray-800"
       />
       
-      <div className="flex items-center gap-2 mb-2">
-        <MessageSquare className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
-        <div className="font-semibold text-cyan-700 dark:text-cyan-300">
-          {data.label || "Chat / Manual"}
+      {/* Header with icon and label */}
+      <div className="flex items-center gap-2.5 mb-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-cyan-500 dark:bg-cyan-600 flex items-center justify-center shadow-sm">
+          <MessageSquare className="w-4.5 h-4.5 text-white" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-sm text-gray-800 dark:text-gray-100 truncate">
+            {data.label || "Chat Input"}
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            Manual Trigger
+          </div>
         </div>
       </div>
       
-      {data.description && (
-        <div className="text-xs text-gray-500 dark:text-gray-500 line-clamp-2">
-          {data.description}
+      {/* Message preview or placeholder */}
+      {hasMessage ? (
+        <div className="mt-2 mb-2 p-2.5 rounded-lg bg-white/60 dark:bg-gray-900/40 border border-cyan-200 dark:border-cyan-800">
+          <div className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2 leading-relaxed">
+            "{data.welcomeMessage}"
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 mb-2 p-2.5 rounded-lg bg-white/40 dark:bg-gray-900/30 border border-dashed border-cyan-300 dark:border-cyan-700">
+          <div className="text-xs text-gray-400 dark:text-gray-500 italic">
+            Click to configure message
+          </div>
         </div>
       )}
       
-      <div className="mt-2 text-xs text-cyan-600 dark:text-cyan-400">
-        💬 Interactive Input
+      {/* Footer badge */}
+      <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-cyan-200/50 dark:border-cyan-700/30">
+        <div className="flex items-center gap-1 text-xs text-cyan-600 dark:text-cyan-400">
+          <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></div>
+          <span className="font-medium">Ready for input</span>
+        </div>
       </div>
       
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 !bg-cyan-500"
+        className="w-3 h-3 !bg-cyan-500 border-2 border-white dark:border-gray-800"
       />
     </div>
   );

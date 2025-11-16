@@ -40,10 +40,10 @@ export function Sidebar({ isCollapsed = false }: SidebarProps) {
         </div>
         <div>
           <h1 className="text-lg font-bold text-[hsl(var(--sidebar-foreground))]">
-            AI Platform
+            Orchestration Platform
           </h1>
           <p className="text-xs text-[hsl(var(--sidebar-foreground))]/60">
-            Orchestration Suite
+            Agent & Workflow Management
           </p>
         </div>
       </div>

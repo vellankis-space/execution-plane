@@ -36,13 +36,15 @@ export class WorkflowExecutionEngine {
   private isStopped: boolean = false;
   private onNodeUpdate?: (nodeId: string, status: string, output?: any) => void;
   private onExecutionUpdate?: (result: WorkflowExecutionResult) => void;
+  private onUserInputRequired?: (node: Node, welcomeMessage: string) => Promise<string>;
 
   constructor(
     nodes: Node[],
     edges: Edge[],
     context: ExecutionContext,
     onNodeUpdate?: (nodeId: string, status: string, output?: any) => void,
-    onExecutionUpdate?: (result: WorkflowExecutionResult) => void
+    onExecutionUpdate?: (result: WorkflowExecutionResult) => void,
+    onUserInputRequired?: (node: Node, welcomeMessage: string) => Promise<string>
   ) {
     this.nodes = nodes;
     this.edges = edges;
@@ -50,6 +52,7 @@ export class WorkflowExecutionEngine {
     this.executionResults = new Map();
     this.onNodeUpdate = onNodeUpdate;
     this.onExecutionUpdate = onExecutionUpdate;
+    this.onUserInputRequired = onUserInputRequired;
   }
 
   async execute(): Promise<WorkflowExecutionResult> {
@@ -142,6 +145,10 @@ export class WorkflowExecutionEngine {
 
         case "errorHandlerNode":
           output = await this.executeErrorHandlerNode(node, inputData);
+          break;
+
+        case "chatNode":
+          output = await this.executeChatNode(node, inputData);
           break;
 
         case "displayNode":
@@ -314,6 +321,27 @@ export class WorkflowExecutionEngine {
     const { error_type, description } = node.data;
     console.error("Error handled:", inputData);
     return inputData;
+  }
+
+  private async executeChatNode(node: Node, inputData: any): Promise<any> {
+    const welcomeMessage = node.data.welcomeMessage || "Please provide your input:";
+    
+    // Check if we have a callback for user input
+    if (!this.onUserInputRequired) {
+      throw new Error("Chat node requires user input callback to be configured");
+    }
+
+    // Request user input through the callback
+    const userMessage = await this.onUserInputRequired(node, welcomeMessage);
+    
+    // Return the user's message in a format accessible to next nodes
+    return {
+      message: userMessage,
+      userInput: userMessage,
+      welcomeMessage: welcomeMessage,
+      timestamp: new Date().toISOString(),
+      nodeId: node.id
+    };
   }
 
   private async executeDisplayNode(node: Node, inputData: any): Promise<any> {

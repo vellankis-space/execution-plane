@@ -41,11 +41,23 @@ class KnowledgeBaseService:
         return f"kb_{agent_id[:8]}_{sanitized_name}_{uuid.uuid4().hex[:8]}"
     
     def _get_embeddings(self, texts: List[str], model: str = "qwen3-embedding:0.6b") -> List[List[float]]:
+        """Generate embeddings with error handling and timeout"""
         embeddings = []
-        for text in texts:
-            response = self.ollama_client.embeddings(model=model, prompt=text)
-            embeddings.append(response['embedding'])
-        return embeddings
+        try:
+            for text in texts:
+                # Truncate text to prevent embedding timeouts
+                truncated_text = text[:8000] if len(text) > 8000 else text
+                response = self.ollama_client.embeddings(model=model, prompt=truncated_text)
+                embeddings.append(response['embedding'])
+            return embeddings
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "connection" in error_msg or "refused" in error_msg:
+                raise Exception("Ollama server is not running. Please start Ollama: 'ollama serve'")
+            elif "not found" in error_msg or "pull" in error_msg:
+                raise Exception(f"Embedding model '{model}' not found. Please pull it: 'ollama pull {model}'")
+            else:
+                raise Exception(f"Failed to generate embeddings: {str(e)}")
     
     async def create_knowledge_base(self, kb_data: KnowledgeBaseCreate) -> KnowledgeBase:
         kb_id = str(uuid.uuid4())
@@ -267,6 +279,12 @@ class KnowledgeBaseService:
         elif ext in ['.txt', '.md']:
             with open(file_path, 'r', encoding='utf-8') as f:
                 return f.read()
+        elif ext == '.json':
+            import json
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # Convert JSON to readable text format
+                return json.dumps(data, indent=2, ensure_ascii=False)
         elif ext in ['.html', '.htm']:
             loader = UnstructuredHTMLLoader(file_path)
             docs = loader.load()
@@ -314,28 +332,44 @@ class KnowledgeBaseService:
         return results
     
     async def query_agent_knowledge(self, agent_id: str, query: str, top_k: int = 5) -> str:
-        knowledge_bases = await self.get_knowledge_bases_by_agent(agent_id)
-        
-        if not knowledge_bases:
+        """Query knowledge bases for an agent with error handling"""
+        try:
+            knowledge_bases = await self.get_knowledge_bases_by_agent(agent_id)
+            
+            if not knowledge_bases:
+                return ""
+            
+            all_results = []
+            for kb in knowledge_bases:
+                try:
+                    query_data = KnowledgeBaseQuery(query=query, top_k=top_k)
+                    results = await self.query_knowledge_base(kb.kb_id, query_data)
+                    all_results.extend(results)
+                except Exception as kb_error:
+                    # Log error but continue with other knowledge bases
+                    print(f"Error querying knowledge base {kb.kb_id}: {str(kb_error)}")
+                    continue
+            
+            if not all_results:
+                return ""
+            
+            all_results.sort(key=lambda x: x.score, reverse=True)
+            top_results = all_results[:top_k]
+            
+            if not top_results:
+                return ""
+            
+            context = "Relevant information from knowledge base:\n\n"
+            for idx, result in enumerate(top_results, 1):
+                context += f"{idx}. {result.content}\n\n"
+            
+            return context
+        except Exception as e:
+            # Log error and return empty context to allow agent to continue without KB
+            print(f"Error querying agent knowledge: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return ""
-        
-        all_results = []
-        for kb in knowledge_bases:
-            query_data = KnowledgeBaseQuery(query=query, top_k=top_k)
-            results = await self.query_knowledge_base(kb.kb_id, query_data)
-            all_results.extend(results)
-        
-        all_results.sort(key=lambda x: x.score, reverse=True)
-        top_results = all_results[:top_k]
-        
-        if not top_results:
-            return ""
-        
-        context = "Relevant information from knowledge base:\n\n"
-        for idx, result in enumerate(top_results, 1):
-            context += f"{idx}. {result.content}\n\n"
-        
-        return context
     
     async def get_documents(self, kb_id: str) -> List[KnowledgeDocument]:
         return self.db.query(KnowledgeDocument).filter(KnowledgeDocument.kb_id == kb_id).all()

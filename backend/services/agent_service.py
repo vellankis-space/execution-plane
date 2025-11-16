@@ -24,6 +24,7 @@ from services.memory_service import MemoryService
 from services.tools_service import ToolsService
 from services.cost_tracking_service import CostTrackingService
 from services.llm_service import LLMService
+from services.rate_limit_handler import RateLimitHandler, RateLimitError
 from middleware.pii_middleware import create_pii_middleware_from_config, PIIMiddleware
 
 from models.agent import Agent as AgentModel
@@ -169,6 +170,45 @@ class AgentService:
             self.db.commit()
             return True
         return False
+    
+    async def update_agent(self, agent_id: str, agent_data: AgentCreate, tenant_id: Optional[str] = None) -> Optional[AgentInDB]:
+        """Update an existing agent"""
+        query = self.db.query(AgentModel).filter(AgentModel.agent_id == agent_id)
+        
+        # Apply tenant filter if provided
+        if tenant_id:
+            query = query.filter(AgentModel.tenant_id == tenant_id)
+        
+        db_agent = query.first()
+        if not db_agent:
+            return None
+        
+        # Encrypt the API key if provided
+        if agent_data.api_key:
+            db_agent.api_key_encrypted = self._encrypt_api_key(agent_data.api_key)
+        
+        # Update fields
+        db_agent.name = agent_data.name
+        db_agent.agent_type = agent_data.agent_type
+        db_agent.llm_provider = agent_data.llm_provider
+        db_agent.llm_model = agent_data.llm_model
+        db_agent.temperature = agent_data.temperature
+        db_agent.system_prompt = agent_data.system_prompt
+        db_agent.tools = agent_data.tools
+        db_agent.tool_configs = agent_data.tool_configs
+        db_agent.max_iterations = agent_data.max_iterations
+        db_agent.memory_type = agent_data.memory_type
+        db_agent.streaming_enabled = agent_data.streaming_enabled
+        db_agent.human_in_loop = agent_data.human_in_loop
+        db_agent.recursion_limit = agent_data.recursion_limit
+        db_agent.pii_config = agent_data.pii_config
+        db_agent.version = (db_agent.version or 1) + 1  # Increment version
+        
+        self.db.commit()
+        self.db.refresh(db_agent)
+        print(f"Agent updated in database: {db_agent.agent_id}")
+        
+        return AgentInDB.model_validate(db_agent)
 
     async def chat_with_agent(self, agent_id: str, message: str, thread_id: Optional[str] = None) -> str:
         """Chat with an agent"""
@@ -238,7 +278,7 @@ class AgentService:
                 return f"Error communicating with the agent: {error_msg}"
     
     async def execute_agent(self, agent_id: str, input_text: str, session_id: Optional[str] = None) -> str:
-        """Execute an agent with optional Langfuse tracing"""
+        """Execute an agent with optional Langfuse tracing and automatic rate limit handling"""
         from services.langfuse_integration import LangfuseIntegration
         
         langfuse = LangfuseIntegration()
@@ -254,6 +294,15 @@ class AgentService:
         if not agent:
             raise ValueError("Agent not found")
         
+        # Track original configuration for fallback
+        original_provider = agent.llm_provider
+        original_model = agent.llm_model
+        # Increase max retries to allow trying all Groq models + alternative providers
+        # We now have 17 Groq models, so allow up to 25 attempts total
+        max_retries = 25
+        retry_count = 0
+        last_provider_tried = None
+        
         # Apply PII filtering to input if configured
         filtered_input = input_text
         if agent.pii_config:
@@ -261,10 +310,125 @@ class AgentService:
             if pii_middleware:
                 filtered_input = pii_middleware.process_message(input_text, message_type="input")
         
+        # Retry loop with fallback support
+        while retry_count < max_retries:
+            try:
+                return await self._execute_agent_with_fallback(
+                    agent=agent,
+                    filtered_input=filtered_input,
+                    session_id=session_id,
+                    user_id=session_id if session_id else f"agent_{agent_id}",
+                    langfuse=langfuse,
+                    trace=trace
+                )
+            except Exception as e:
+                error_msg = str(e)
+                
+                # Check if it's a rate limit error
+                if RateLimitHandler.is_rate_limit_error(error_msg):
+                    retry_count += 1
+                    provider = RateLimitHandler.extract_provider(error_msg) or agent.llm_provider
+                    current_model = agent.llm_model
+                    
+                    logger.warning(f"⚠️ Rate limit hit on {provider}/{current_model} (attempt {retry_count}/{max_retries})")
+                    print(f"⚠️ Rate limit hit on {provider}/{current_model} (attempt {retry_count}/{max_retries})")
+                    
+                    # Extract and cache the rate limit with wait time
+                    wait_time = RateLimitHandler.extract_wait_time(error_msg)
+                    RateLimitHandler.cache_rate_limit(
+                        provider,
+                        current_model,
+                        wait_time if wait_time else 300  # Default 5 minutes
+                    )
+                    
+                    if retry_count >= max_retries:
+                        # Check how many models are still available
+                        available_count = len(RateLimitHandler.get_all_available_models(provider))
+                        raise ValueError(
+                            f"❌ Exhausted all {max_retries} retry attempts. "
+                            f"Rate limits on multiple models. {available_count} models may still be available. "
+                            f"Please try again later or use a different API key."
+                        )
+                    
+                    # Strategy 1: Try next model in SAME provider first
+                    fallback_model = RateLimitHandler.get_fallback_model(provider, current_model)
+                    
+                    if fallback_model:
+                        # Found available model in same provider
+                        agent.llm_model = fallback_model
+                        logger.info(f"🔄 Attempt {retry_count}: Switching to {provider}/{fallback_model}")
+                        print(f"🔄 Attempt {retry_count}: Switching to {provider}/{fallback_model}")
+                        continue
+                    
+                    # Strategy 2: All models in current provider are rate-limited, try alternative provider
+                    logger.warning(f"⚠️ All models in {provider} appear rate-limited or exhausted")
+                    print(f"⚠️ All models in {provider} appear rate-limited or exhausted")
+                    
+                    alt_provider = RateLimitHandler.get_alternative_provider(provider)
+                    if alt_provider:
+                        # Get first available model from alternative provider
+                        alt_models = RateLimitHandler.get_all_available_models(alt_provider)
+                        if alt_models:
+                            agent.llm_provider = alt_provider
+                            agent.llm_model = alt_models[0]
+                            logger.info(f"🔄 Attempt {retry_count}: Switching provider to {alt_provider}/{alt_models[0]}")
+                            print(f"🔄 Attempt {retry_count}: Switching provider to {alt_provider}/{alt_models[0]}")
+                            last_provider_tried = alt_provider
+                            continue
+                    
+                    # Strategy 3: No fallbacks available
+                    logger.error("❌ No more fallback models or providers available")
+                    print("❌ No more fallback models or providers available")
+                    
+                    # Build helpful error message
+                    groq_available = len(RateLimitHandler.get_all_available_models("groq"))
+                    openai_available = len(RateLimitHandler.get_all_available_models("openai"))
+                    anthropic_available = len(RateLimitHandler.get_all_available_models("anthropic"))
+                    
+                    error_parts = [
+                        f"⚠️ Rate limit reached on {provider}/{current_model}.",
+                    ]
+                    if wait_time:
+                        if wait_time < 60:
+                            wait_str = f"{wait_time} seconds"
+                        elif wait_time < 3600:
+                            wait_str = f"{wait_time // 60} minutes"
+                        else:
+                            wait_str = f"{wait_time // 3600} hours"
+                        error_parts.append(f"Provider requests waiting {wait_str}.")
+                    
+                    error_parts.append(
+                        f"\n\nAvailable models status:"
+                        f"\n  • Groq: {groq_available} models available"
+                        f"\n  • OpenAI: {openai_available} models available"
+                        f"\n  • Anthropic: {anthropic_available} models available"
+                    )
+                    
+                    if groq_available + openai_available + anthropic_available == 0:
+                        error_parts.append(
+                            "\n\n💡 All known models are currently rate-limited. "
+                            "Please try again later or add additional API keys."
+                        )
+                    
+                    raise ValueError(" ".join(error_parts))
+                else:
+                    # Not a rate limit error, raise immediately
+                    raise
+        
+        # If we exhausted all retries
+        raise ValueError(f"Failed to execute agent after {max_retries} attempts with different models/providers.")
+    
+    async def _execute_agent_with_fallback(
+        self, 
+        agent: AgentInDB,
+        filtered_input: str,
+        session_id: Optional[str],
+        user_id: str,
+        langfuse: Any,
+        trace: Any
+    ) -> str:
+        """Execute agent with current configuration (helper method for retry logic)"""
         try:
-            # Use session_id if provided (session-based), otherwise use agent_id (persistent)
-            user_id = session_id if session_id else f"agent_{agent_id}"
-            
             # Retrieve relevant memories from mem0 if enabled
             memory_context = ""
             if self.memory_service.is_enabled():
@@ -272,7 +436,7 @@ class AgentService:
                     memories = self.memory_service.search_memory(
                         query=filtered_input,
                         user_id=user_id,
-                        agent_id=agent_id,
+                        agent_id=agent.agent_id,
                         top_k=5,  # Increased from 3 to 5 for more context
                         llm_provider=agent.llm_provider,
                         llm_model=agent.llm_model
@@ -294,16 +458,16 @@ class AgentService:
                 import asyncio
                 from services.knowledge_base_service import KnowledgeBaseService
                 kb_service = KnowledgeBaseService(self.db)
-                # Add 10 second timeout for KB queries to prevent hanging
+                # Add 30 second timeout for KB queries to allow for embedding generation
                 knowledge_context = await asyncio.wait_for(
-                    kb_service.query_agent_knowledge(agent_id, filtered_input, top_k=5),
-                    timeout=10.0
+                    kb_service.query_agent_knowledge(agent.agent_id, filtered_input, top_k=5),
+                    timeout=30.0
                 )
                 # Note: Knowledge base content is trusted and should not be PII filtered
                 if knowledge_context:
-                    print(f"Retrieved KB context for agent {agent_id}: {len(knowledge_context)} chars")
+                    print(f"Retrieved KB context for agent {agent.agent_id}: {len(knowledge_context)} chars")
             except asyncio.TimeoutError:
-                print(f"Knowledge base query timed out for agent {agent_id}")
+                print(f"Knowledge base query timed out for agent {agent.agent_id}")
             except Exception as kb_error:
                 print(f"Error retrieving knowledge base context: {kb_error}")
                 import traceback
@@ -321,16 +485,28 @@ class AgentService:
                 # Add memory context to system prompt for ReAct agents
                 system_content = agent.system_prompt or "You are a helpful AI assistant."
                 
-                # Add available tools information to prevent tool hallucination
+                # IMPORTANT: Add knowledge base context FIRST (before tools)
+                # This ensures the agent checks KB before using tools
+                has_kb = False
+                if knowledge_context:
+                    has_kb = True
+                    system_content += f"\n\n## Knowledge Base Information\n{knowledge_context}"
+                    system_content += "\n\nIMPORTANT: This knowledge base contains verified information about this domain. Always check if the knowledge base has relevant information to answer the user's query BEFORE using any tools."
+                
+                # Add memory context from previous conversations
+                if memory_context:
+                    system_content += f"\n\n## Context from Previous Conversations\n{memory_context}"
+                
+                # Add available tools information AFTER knowledge base
                 if hasattr(agent, 'tools') and agent.tools:
                     tool_names = agent.tools
                     if tool_names:
-                        system_content += f"\n\nAvailable tools: {', '.join(tool_names)}. You can only use these tools. Do not attempt to use any other tools."
+                        if has_kb:
+                            system_content += f"\n\n## Available Tools\nIf the knowledge base doesn't have sufficient information, you can use these tools: {', '.join(tool_names)}."
+                            system_content += "\n\nTool Usage Strategy:\n1. First, check if the knowledge base has the answer\n2. If KB has relevant info, use it to answer directly\n3. Only use tools if KB info is insufficient or you need real-time/external data\n4. You can only use the listed tools - do not attempt to use any other tools."
+                        else:
+                            system_content += f"\n\nAvailable tools: {', '.join(tool_names)}. You can only use these tools. Do not attempt to use any other tools."
                 
-                if knowledge_context:
-                    system_content += f"\n\n{knowledge_context}"
-                if memory_context:
-                    system_content += f"\n\n{memory_context}"
                 # Enforce concise response style
                 system_content += "\n\nGuidelines: Keep responses concise (<=120 words). Use at most 5 bullet points. Ask at most one clarifying question only if necessary. Avoid long introductions."
                 messages.insert(0, SystemMessage(content=system_content))
@@ -341,32 +517,45 @@ class AgentService:
             try:
                 if agent.agent_type == "react":
                     # ReAct agents expect messages format
+                    # Increase timeout to 180s for agents with knowledge bases
+                    timeout_duration = 180.0 if knowledge_context else 90.0
                     response = await asyncio.wait_for(
                         asyncio.to_thread(langgraph_agent.invoke, {"messages": messages}),
-                        timeout=90.0  # 90 second timeout for LLM calls (increased for FireCrawl)
+                        timeout=timeout_duration
                     )
                 else:
                     # Other agents (plan-execute, reflection, custom) expect input format
-                    # For these, we'll add the memory context to the input
+                    # For these, we'll add the knowledge base and memory context to the input
+                    # IMPORTANT: Knowledge base context comes FIRST
                     enhanced_input = filtered_input
                     if knowledge_context or memory_context:
                         context_parts = []
+                        
+                        # Add KB context first with clear instructions
                         if knowledge_context:
-                            context_parts.append(knowledge_context)
+                            kb_section = "## Knowledge Base Information (Check this FIRST)\n"
+                            kb_section += knowledge_context
+                            kb_section += "\n\nIMPORTANT: Use this knowledge base information to answer the query if possible. Only use tools if the knowledge base doesn't have sufficient information."
+                            context_parts.append(kb_section)
+                        
+                        # Add memory context second
                         if memory_context:
-                            context_parts.append(memory_context)
-                        enhanced_input = f"{filtered_input}\n\nContext:\n" + "\n\n".join(context_parts)
+                            context_parts.append("## Previous Conversation Context\n" + memory_context)
+                        
+                        enhanced_input = f"{filtered_input}\n\n" + "\n\n".join(context_parts)
                     
+                    # Increase timeout to 180s for agents with knowledge bases
+                    timeout_duration = 180.0 if (knowledge_context or memory_context) else 90.0
                     response = await asyncio.wait_for(
                         asyncio.to_thread(langgraph_agent.invoke, {"input": enhanced_input}),
-                        timeout=90.0
+                        timeout=timeout_duration
                     )
             except asyncio.TimeoutError:
                 raise ValueError("Agent response timed out. The LLM provider may be slow or unreachable. Please try again.")
             except Exception as e:
                 # Handle API errors more gracefully
                 error_msg = str(e)
-                print(f"Error executing agent {agent_id}: {error_msg}")
+                print(f"Error executing agent {agent.agent_id}: {error_msg}")
                 
                 # Check for specific API key errors from LLM providers
                 if (("API key" in error_msg or "401" in error_msg) and 
@@ -374,13 +563,11 @@ class AgentService:
                     raise ValueError("Invalid API key. Please check your API key configuration.")
                 elif "403" in error_msg and ("OpenAI" in error_msg or "Anthropic" in error_msg or "Groq" in error_msg):
                     raise ValueError("Access forbidden. Please check your API key permissions.")
-                elif "429" in error_msg and ("OpenAI" in error_msg or "Anthropic" in error_msg or "Groq" in error_msg):
-                    raise ValueError("Rate limit exceeded. Please try again later.")
                 elif "tool_use_failed" in error_msg or "Failed to call a function" in error_msg:
                     # Handle tool execution failures more gracefully
                     raise ValueError("Tool execution failed. This may be due to rate limiting, network issues, or missing API keys. Please try again or check your tool configuration.")
                 else:
-                    # For non-API key errors, re-raise the original exception
+                    # For other errors (including 429 rate limits), re-raise to be caught by outer handler
                     raise e
             
             # Extract the final response
@@ -428,7 +615,7 @@ class AgentService:
                         model=agent.llm_model,
                         input_tokens=input_tokens,
                         output_tokens=output_tokens,
-                        agent_id=agent_id,
+                        agent_id=agent.agent_id,
                         workflow_id=None,  # Will be set if called from workflow
                         execution_id=None,  # Will be set if called from workflow
                         call_type="chat",
@@ -445,8 +632,8 @@ class AgentService:
                 # Fallback to string representation
                 return str(final_message)
         except Exception as e:
-            # Handle any unexpected errors in the chat_with_agent method
-            print(f"Unexpected error in chat_with_agent for agent {agent_id}: {e}")
+            # Handle any unexpected errors in the execution method
+            print(f"Unexpected error executing agent {agent.agent_id}: {e}")
             import traceback
             traceback.print_exc()
             raise ValueError(f"An unexpected error occurred while processing your request: {str(e)}")

@@ -15,9 +15,9 @@ export default function Agents() {
                 <Brain className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">Agents</h1>
+                <h1 className="text-2xl font-bold">AI Agents</h1>
                 <p className="text-sm text-muted-foreground">
-                  Manage your AI agents and their capabilities
+                  Build and orchestrate intelligent AI agents
                 </p>
               </div>
             </div>

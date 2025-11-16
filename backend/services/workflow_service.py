@@ -69,17 +69,24 @@ class WorkflowService:
         
         return query.offset(skip).limit(limit).all()
 
-    async def update_workflow(self, workflow_id: str, workflow_data: WorkflowUpdate) -> Optional[Workflow]:
+    async def update_workflow(self, workflow_id: str, workflow_data: WorkflowUpdate, tenant_id: Optional[str] = None) -> Optional[Workflow]:
         """Update a workflow"""
-        db_workflow = await self.get_workflow(workflow_id)
+        db_workflow = await self.get_workflow(workflow_id, tenant_id=tenant_id)
         if not db_workflow:
             return None
             
         update_data = workflow_data.dict(exclude_unset=True)
+        
+        # Handle definition conversion if it's a Pydantic model
+        if 'definition' in update_data and update_data['definition'] is not None:
+            if hasattr(update_data['definition'], 'dict'):
+                update_data['definition'] = update_data['definition'].dict()
+        
         for key, value in update_data.items():
             setattr(db_workflow, key, value)
             
         setattr(db_workflow, 'updated_at', datetime.utcnow())
+        setattr(db_workflow, 'version', (db_workflow.version or 1) + 1)  # Increment version
         self.db.commit()
         self.db.refresh(db_workflow)
         

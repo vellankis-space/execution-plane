@@ -40,11 +40,15 @@ class WorkflowBase(BaseModel):
 
 
 class WorkflowCreate(WorkflowBase):
-    pass
+    class Config:
+        extra = "ignore"  # Ignore extra fields like 'triggers' until migration is run
 
 
-class WorkflowInDB(WorkflowBase):
+class WorkflowInDB(BaseModel):
     workflow_id: str
+    name: str
+    description: Optional[str] = ""
+    definition: WorkflowDefinition
     created_by: Optional[str] = None
     is_active: bool
     created_at: datetime
@@ -59,6 +63,9 @@ class WorkflowUpdate(BaseModel):
     description: Optional[str] = None
     definition: Optional[WorkflowDefinition] = None
     is_active: Optional[bool] = None
+    
+    class Config:
+        extra = "ignore"  # Ignore extra fields like 'triggers' until migration is run
 
 
 class WorkflowExecutionBase(BaseModel):

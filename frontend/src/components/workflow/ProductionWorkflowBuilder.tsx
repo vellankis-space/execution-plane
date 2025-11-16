@@ -51,6 +51,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Trash2,
+  MessageSquare,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
@@ -90,7 +91,13 @@ export function ProductionWorkflowBuilder() {
   const [testMode, setTestMode] = useState(false);
   const [testData, setTestData] = useState("{}");
   const [showExecuteDialog, setShowExecuteDialog] = useState(false);
-  const [executionInput, setExecutionInput] = useState("{\n  \"query\": \"Hello, how can you help me?\"\n}");
+  const [executionInput, setExecutionInput] = useState("");  // Changed to simple message input
+  
+  // Chat node input during execution
+  const [showChatInputDialog, setShowChatInputDialog] = useState(false);
+  const [chatInputMessage, setChatInputMessage] = useState("");
+  const [chatInputWelcome, setChatInputWelcome] = useState("");
+  const [chatInputResolver, setChatInputResolver] = useState<((value: string) => void) | null>(null);
 
   // Settings
   const [activeTab, setActiveTab] = useState("canvas");
@@ -359,6 +366,25 @@ export function ProductionWorkflowBuilder() {
     setShowExecuteDialog(true);
   };
 
+  const handleChatInputRequired = async (node: any, welcomeMessage: string): Promise<string> => {
+    // Return a promise that resolves when user provides input
+    return new Promise((resolve) => {
+      setChatInputWelcome(welcomeMessage);
+      setChatInputMessage("");
+      setChatInputResolver(() => resolve);
+      setShowChatInputDialog(true);
+    });
+  };
+
+  const submitChatInput = () => {
+    if (chatInputResolver) {
+      chatInputResolver(chatInputMessage);
+      setChatInputResolver(null);
+      setShowChatInputDialog(false);
+      setChatInputMessage("");
+    }
+  };
+
   const executeWorkflowWithInput = async () => {
     // Validate workflow structure
     const validation = validateWorkflowStructure(nodes, edges);
@@ -376,13 +402,21 @@ export function ProductionWorkflowBuilder() {
     setIsPaused(false);
 
     try {
-      // Parse execution input
-      let variables = {};
+      // Use simple message input instead of JSON
+      const variables = {
+        message: executionInput || "Hello, how can you help me?"
+      };
+      
+      // Legacy handling for JSON input (kept for compatibility)
       try {
-        variables = JSON.parse(executionInput);
+        if (executionInput.trim().startsWith('{')) {
+          const parsed = JSON.parse(executionInput);
+          Object.assign(variables, parsed);
+        }
       } catch (error) {
+        // If parsing fails, just use the message as-is
         toast({
-          title: "Invalid Input",
+          title: "Using Plain Text",
           description: "Please provide valid JSON input",
           variant: "destructive",
         });
@@ -400,7 +434,8 @@ export function ProductionWorkflowBuilder() {
           credentials: {},
         },
         handleNodeUpdate,
-        handleExecutionUpdate
+        handleExecutionUpdate,
+        handleChatInputRequired
       );
 
       setExecutionEngine(engine);
@@ -711,43 +746,103 @@ export function ProductionWorkflowBuilder() {
 
       {/* Workflow Execution Input Dialog */}
       <Dialog open={showExecuteDialog} onOpenChange={setShowExecuteDialog}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Workflow Execution Input</DialogTitle>
+            <DialogTitle>Execute Workflow</DialogTitle>
             <DialogDescription>
-              Provide input data for your workflow. This will be available as input_data in your nodes.
+              Provide an input message for your workflow
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Input Data (JSON)</Label>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Input Message</Label>
               <Textarea
                 value={executionInput}
                 onChange={(e) => setExecutionInput(e.target.value)}
-                placeholder={'{\n  "query": "Your input here",\n  "user_id": "123"\n}'}
-                className="mt-2 font-mono text-sm"
-                rows={12}
+                placeholder="Type your message here... (e.g., 'Analyze this data' or 'Generate a report')"
+                className="resize-none"
+                rows={4}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.ctrlKey && !isExecuting) {
+                    executeWorkflowWithInput();
+                  }
+                }}
               />
-              <p className="text-xs text-muted-foreground mt-2">
-                💡 This data will be accessible in agent nodes through parameters like <code className="bg-muted px-1 py-0.5 rounded">{"{{ $json.query }}"}</code>
+              <p className="text-xs text-muted-foreground">
+                💡 Press Ctrl+Enter to execute • This message will be available as <code className="bg-muted px-1 py-0.5 rounded">{"{{ $json.message }}"}</code> in your nodes
               </p>
             </div>
-            
-            <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg text-sm">
-              <p className="font-semibold text-blue-900 dark:text-blue-100 mb-1">Example usage:</p>
-              <ul className="text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
-                <li>Agent parameters: <code className="bg-blue-100 dark:bg-blue-900 px-1 py-0.5 rounded text-xs">query → {"{{ $json.query }}"}</code></li>
-                <li>Condition: <code className="bg-blue-100 dark:bg-blue-900 px-1 py-0.5 rounded text-xs">{"{{ $json.user_id === '123' }}"}</code></li>
-              </ul>
-            </div>
           </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setShowExecuteDialog(false)}>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowExecuteDialog(false)} disabled={isExecuting}>
               Cancel
             </Button>
-            <Button onClick={executeWorkflowWithInput} className="gap-2">
-              <Play className="w-4 h-4" />
-              Execute Workflow
+            <Button onClick={executeWorkflowWithInput} disabled={isExecuting} className="gap-2">
+              {isExecuting ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
+                  Executing...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  Execute
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Chat Node Input Dialog (During Execution) */}
+      <Dialog open={showChatInputDialog} onOpenChange={(open) => !open && chatInputResolver && chatInputResolver("")}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-cyan-600" />
+              Chat Input Required
+            </DialogTitle>
+            <DialogDescription>
+              The workflow is waiting for your input
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {chatInputWelcome && (
+              <div className="rounded-lg bg-cyan-50 dark:bg-cyan-950/30 p-4 border border-cyan-200 dark:border-cyan-800">
+                <p className="text-sm text-cyan-900 dark:text-cyan-100 leading-relaxed">
+                  {chatInputWelcome}
+                </p>
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <Label>Your Message</Label>
+              <Textarea
+                autoFocus
+                placeholder="Type your message here..."
+                value={chatInputMessage}
+                onChange={(e) => setChatInputMessage(e.target.value)}
+                className="resize-none"
+                rows={4}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.ctrlKey && chatInputMessage.trim()) {
+                    submitChatInput();
+                  }
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Press Ctrl+Enter to submit
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={submitChatInput}
+              disabled={!chatInputMessage.trim()}
+              className="gap-2"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Submit
             </Button>
           </div>
         </DialogContent>
@@ -934,6 +1029,61 @@ export function ProductionWorkflowBuilder() {
                       />
                     </div>
                   )}
+                </>
+              )}
+
+              {selectedNode.type === "chatNode" && (
+                <>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-cyan-600" />
+                      Welcome Message
+                    </Label>
+                    <Textarea
+                      placeholder="Enter the message that will be displayed when workflow starts... (e.g., 'Hello! I'm ready to help you.')"
+                      value={selectedNode.data.welcomeMessage || ""}
+                      onChange={(e) => updateNode(selectedNode.id, { welcomeMessage: e.target.value })}
+                      className="mt-1 min-h-[100px]"
+                      rows={4}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      💡 This message will be shown at the start of workflow execution. Users will provide their input after seeing this message.
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg bg-cyan-50 dark:bg-cyan-950/30 p-4 border border-cyan-200 dark:border-cyan-800">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-cyan-500 flex items-center justify-center">
+                        <MessageSquare className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <h4 className="text-sm font-semibold text-cyan-900 dark:text-cyan-100">
+                          How Chat Input Works
+                        </h4>
+                        <ul className="text-xs text-cyan-800 dark:text-cyan-200 space-y-1.5">
+                          <li className="flex items-start gap-2">
+                            <span className="text-cyan-600 dark:text-cyan-400 font-bold">1.</span>
+                            <span>Your welcome message is displayed to the user</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-cyan-600 dark:text-cyan-400 font-bold">2.</span>
+                            <span>User provides input through the execution dialog</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="text-cyan-600 dark:text-cyan-400 font-bold">3.</span>
+                            <span>Input is available as <code className="bg-cyan-100 dark:bg-cyan-900 px-1.5 py-0.5 rounded text-xs">{"{{ $json.message }}"}</code></span>
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-3 border border-blue-200 dark:border-blue-800">
+                    <p className="text-xs text-blue-800 dark:text-blue-200">
+                      <strong>Example:</strong> If you set "Hello! How can I help you today?" as the welcome message, 
+                      users will see this prompt when executing the workflow, then they can type their request.
+                    </p>
+                  </div>
                 </>
               )}
 

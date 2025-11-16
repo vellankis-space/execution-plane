@@ -15,9 +15,9 @@ export default function Workflows() {
                 <Network className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">Workflows</h1>
+                <h1 className="text-2xl font-bold">Workflow Orchestration</h1>
                 <p className="text-sm text-muted-foreground">
-                  Orchestrate complex multi-agent workflows
+                  Design and orchestrate complex multi-agent workflows
                 </p>
               </div>
             </div>

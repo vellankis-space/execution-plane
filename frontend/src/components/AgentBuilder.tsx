@@ -535,8 +535,8 @@ export function AgentBuilder() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">{isEditMode ? 'Edit Agent' : 'Playground'}</h1>
-            <p className="text-sm text-muted-foreground mt-1">{isEditMode ? 'Update your agent configuration' : 'Configure and test your LangGraph agent'}</p>
+            <h1 className="text-2xl font-semibold text-foreground">{isEditMode ? 'Edit Agent' : 'Agent Playground'}</h1>
+            <p className="text-sm text-muted-foreground mt-1">{isEditMode ? 'Update your agent configuration' : 'Configure and orchestrate your AI agents'}</p>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -853,7 +853,7 @@ export function AgentBuilder() {
                     ref={fileInputRef}
                     type="file"
                     multiple
-                    accept=".pdf,.docx,.txt,.md,.html,.htm"
+                    accept=".pdf,.docx,.txt,.md,.html,.htm,.json"
                     className="hidden"
                     onChange={(e) => {
                       const files = e.target.files ? Array.from(e.target.files) : [];
@@ -868,7 +868,7 @@ export function AgentBuilder() {
                       <Upload className="w-8 h-8 text-muted-foreground" />
                       <div>
                         <p className="text-sm font-medium">Click to select files</p>
-                        <p className="text-xs text-muted-foreground mt-1">PDF, DOCX, TXT, MD, HTML</p>
+                        <p className="text-xs text-muted-foreground mt-1">PDF, DOCX, TXT, MD, HTML, JSON</p>
                       </div>
                     </div>
                   </div>

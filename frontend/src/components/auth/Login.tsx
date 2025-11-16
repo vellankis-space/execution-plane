@@ -48,10 +48,10 @@ export function Login() {
                 <Sparkles className="w-8 h-8 text-primary-foreground" />
               </div>
               <h1 className="text-3xl font-bold bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
-                AI Platform
+                Orchestration Platform
               </h1>
               <p className="text-muted-foreground mt-2 text-center">
-                Sign in to access your orchestration suite
+                Sign in to orchestrate AI agents and workflows
               </p>
             </div>
 

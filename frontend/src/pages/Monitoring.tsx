@@ -19,9 +19,9 @@ export default function Monitoring() {
               <Activity className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Monitoring & Observability</h1>
+              <h1 className="text-2xl font-bold">Orchestration Monitoring</h1>
               <p className="text-sm text-muted-foreground">
-                Real-time monitoring, metrics, and analytics
+                Real-time monitoring, metrics, and analytics for agents and workflows
               </p>
             </div>
           </div>
