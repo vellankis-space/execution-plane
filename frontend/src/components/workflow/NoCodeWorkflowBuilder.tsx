@@ -379,12 +379,16 @@ export function NoCodeWorkflowBuilder() {
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
-      <Card className="rounded-none border-x-0 border-t-0 p-4">
+      <Card className="rounded-none border-x-0 border-t-0 border-b bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950/80 p-4">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold">{isEditMode ? 'Edit Workflow' : 'Workflow Orchestration Builder'}</h1>
-            <p className="text-sm text-muted-foreground">
-              {isEditMode ? 'Update your workflow orchestration' : 'Visually design and orchestrate AI agent workflows'}
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {isEditMode ? 'Edit Workflow' : 'Workflow Orchestration Builder'}
+            </h1>
+            <p className="text-xs text-muted-foreground mt-1">
+              {isEditMode
+                ? 'Update your workflow orchestration visually'
+                : 'Design and orchestrate workflows using nodes and connections'}
             </p>
           </div>
           <div className="flex gap-2">
@@ -395,7 +399,7 @@ export function NoCodeWorkflowBuilder() {
           </div>
         </div>
         
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4 mt-2">
           <div>
             <Label htmlFor="workflow-name">Workflow Name</Label>
             <Input
@@ -403,7 +407,7 @@ export function NoCodeWorkflowBuilder() {
               placeholder="Enter workflow name"
               value={workflowName}
               onChange={(e) => setWorkflowName(e.target.value)}
-              className="mt-1"
+              className="mt-1 h-9 text-sm"
             />
           </div>
           <div>
@@ -413,7 +417,7 @@ export function NoCodeWorkflowBuilder() {
               placeholder="Describe what this workflow does"
               value={workflowDescription}
               onChange={(e) => setWorkflowDescription(e.target.value)}
-              className="mt-1"
+              className="mt-1 h-9 text-sm"
             />
           </div>
         </div>
@@ -477,7 +481,7 @@ export function NoCodeWorkflowBuilder() {
               onDragOver={onDragOver}
               nodeTypes={nodeTypes}
               fitView
-              className="bg-muted/10"
+              className="bg-slate-50 dark:bg-slate-950/60"
             >
               <Controls />
               <MiniMap

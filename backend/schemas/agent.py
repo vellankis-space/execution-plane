@@ -17,6 +17,7 @@ class AgentBase(BaseModel):
     human_in_loop: bool
     recursion_limit: int
     pii_config: Optional[Dict[str, Any]] = None  # PII filtering configuration
+    mcp_servers: Optional[List[str]] = None  # List of MCP server IDs
 
 class AgentCreate(AgentBase):
     api_key: str  # This will be encrypted and stored

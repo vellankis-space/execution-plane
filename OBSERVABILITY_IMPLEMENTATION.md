@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the comprehensive observability features implemented in the AI Agents Orchestration Platform. The observability system provides real-time monitoring, distributed tracing, cost tracking, and performance analytics.
+This document summarizes the comprehensive observability features implemented in the AI Agents Intelligentic AI. The observability system provides real-time monitoring, distributed tracing, cost tracking, and performance analytics.
 
 ---
 

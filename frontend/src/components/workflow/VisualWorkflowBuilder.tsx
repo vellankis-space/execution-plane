@@ -285,10 +285,10 @@ export function VisualWorkflowBuilder({
   };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-background">
       {/* Header */}
-      <Card className="p-4 mb-4">
-        <div className="space-y-4">
+      <Card className="rounded-none border-x-0 border-t-0 border-b bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950/80 p-4 mb-2">
+        <div className="space-y-3">
           <div>
             <Label htmlFor="workflow-name">Workflow Name</Label>
             <Input
@@ -296,7 +296,7 @@ export function VisualWorkflowBuilder({
               placeholder="Enter workflow name"
               value={workflowName}
               onChange={(e) => setWorkflowName(e.target.value)}
-              className="mt-1"
+              className="mt-1 h-9 text-sm"
             />
           </div>
           <div>
@@ -306,14 +306,15 @@ export function VisualWorkflowBuilder({
               placeholder="Describe what this workflow does"
               value={workflowDescription}
               onChange={(e) => setWorkflowDescription(e.target.value)}
-              className="mt-1"
+              className="mt-1 text-sm"
+              rows={3}
             />
           </div>
         </div>
       </Card>
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30">
         <div className="flex gap-2">
           <Button onClick={addNode} variant="outline" size="sm">
             <Plus className="w-4 h-4 mr-2" />
@@ -331,14 +332,14 @@ export function VisualWorkflowBuilder({
             </Button>
           )}
         </div>
-        <Button onClick={handleSaveWorkflow}>
-          <Save className="w-4 h-4 mr-2" />
+        <Button onClick={handleSaveWorkflow} variant="outline" className="gap-2">
+          <Save className="w-4 h-4" />
           Save Workflow
         </Button>
       </div>
 
       {/* React Flow Canvas */}
-      <div className="flex-1 border rounded-lg bg-gray-50">
+      <div className="flex-1 border-t bg-slate-50 dark:bg-slate-950/60">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -348,7 +349,7 @@ export function VisualWorkflowBuilder({
           onNodeClick={handleNodeClick}
           nodeTypes={nodeTypes}
           fitView
-          className="bg-gray-50"
+          className="bg-slate-50 dark:bg-slate-950/60"
         >
           <Controls />
           <MiniMap />

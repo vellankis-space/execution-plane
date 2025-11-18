@@ -90,10 +90,6 @@ export function ProductionWorkflowBuilder() {
   const [currentExecution, setCurrentExecution] = useState<WorkflowExecutionResult | null>(null);
   const [testMode, setTestMode] = useState(false);
   const [testData, setTestData] = useState("{}");
-  const [showExecuteDialog, setShowExecuteDialog] = useState(false);
-  const [executionInput, setExecutionInput] = useState("");  // Changed to simple message input
-  
-  // Chat node input during execution
   const [showChatInputDialog, setShowChatInputDialog] = useState(false);
   const [chatInputMessage, setChatInputMessage] = useState("");
   const [chatInputWelcome, setChatInputWelcome] = useState("");
@@ -362,8 +358,7 @@ export function ProductionWorkflowBuilder() {
   };
 
   const handleExecuteWorkflow = async () => {
-    // Show input dialog first
-    setShowExecuteDialog(true);
+    await executeWorkflowWithInput();
   };
 
   const handleChatInputRequired = async (node: any, welcomeMessage: string): Promise<string> => {
@@ -397,32 +392,14 @@ export function ProductionWorkflowBuilder() {
       return;
     }
 
-    setShowExecuteDialog(false);
     setIsExecuting(true);
     setIsPaused(false);
 
     try {
-      // Use simple message input instead of JSON
+      // Use default message for workflow execution
       const variables = {
-        message: executionInput || "Hello, how can you help me?"
+        message: "Execute workflow"
       };
-      
-      // Legacy handling for JSON input (kept for compatibility)
-      try {
-        if (executionInput.trim().startsWith('{')) {
-          const parsed = JSON.parse(executionInput);
-          Object.assign(variables, parsed);
-        }
-      } catch (error) {
-        // If parsing fails, just use the message as-is
-        toast({
-          title: "Using Plain Text",
-          description: "Please provide valid JSON input",
-          variant: "destructive",
-        });
-        setIsExecuting(false);
-        return;
-      }
 
       const engine = new WorkflowExecutionEngine(
         nodes,
@@ -571,28 +548,33 @@ export function ProductionWorkflowBuilder() {
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
-      <Card className="rounded-none border-x-0 border-t-0 p-4">
+      <Card className="rounded-none border-x-0 border-t-0 border-b bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950/80 p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex-1">
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+            <h1 className="text-2xl font-semibold flex items-center gap-2 tracking-tight">
               Production Workflow Builder
               {isExecuting && (
-                <Badge variant="secondary" className="animate-pulse">
-                  <Play className="w-3 h-3 mr-1" />
+                <Badge variant="secondary" className="animate-pulse flex items-center gap-1">
+                  <Play className="w-3 h-3" />
                   Running
                 </Badge>
               )}
             </h1>
+            <p className="text-xs text-muted-foreground mt-1">
+              Workflow ID: <span className="font-mono">{workflowId}</span>
+            </p>
             <div className="grid grid-cols-2 gap-4 mt-3">
               <Input
                 placeholder="Workflow name"
                 value={workflowName}
                 onChange={(e) => setWorkflowName(e.target.value)}
+                className="mt-1 h-9 text-sm"
               />
               <Input
                 placeholder="Description"
                 value={workflowDescription}
                 onChange={(e) => setWorkflowDescription(e.target.value)}
+                className="mt-1 h-9 text-sm"
               />
             </div>
           </div>
@@ -605,12 +587,12 @@ export function ProductionWorkflowBuilder() {
         </div>
 
         {/* Execution Controls */}
-        <div className="flex items-center justify-between pt-3 border-t">
+        <div className="flex items-center justify-between pt-3 mt-2 border-t border-border/60">
           <div className="flex gap-2">
             <Button
               onClick={handleExecuteWorkflow}
               disabled={isExecuting}
-              className="gap-2"
+              className="gap-2 px-4 shadow-sm bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               <Play className="w-4 h-4" />
               {testMode ? "Test Run" : "Execute"}
@@ -631,7 +613,7 @@ export function ProductionWorkflowBuilder() {
                 </Button>
               </>
             )}
-            <Button onClick={handleSaveWorkflow} variant="outline" className="gap-2">
+            <Button onClick={handleSaveWorkflow} variant="outline" className="gap-2 border-emerald-500/40 hover:border-emerald-500/80">
               <Save className="w-4 h-4" />
               Save
             </Button>
@@ -650,17 +632,20 @@ export function ProductionWorkflowBuilder() {
           </div>
 
           <div className="flex gap-2 items-center">
-            <Label className="text-sm flex items-center gap-2">
+            <Label className="text-xs flex items-center gap-2 px-3 py-1 rounded-full bg-muted/60 border border-border/60">
               <input
                 type="checkbox"
                 checked={testMode}
                 onChange={(e) => setTestMode(e.target.checked)}
-                className="w-4 h-4"
+                className="w-3 h-3 rounded border-muted-foreground"
               />
               Test Mode
             </Label>
             {currentExecution && (
-              <Badge variant={currentExecution.status === "completed" ? "default" : "destructive"}>
+              <Badge
+                variant={currentExecution.status === "completed" ? "default" : "destructive"}
+                className="flex items-center gap-1 text-xs capitalize"
+              >
                 {currentExecution.status === "completed" ? (
                   <CheckCircle2 className="w-3 h-3 mr-1" />
                 ) : (
@@ -727,14 +712,17 @@ export function ProductionWorkflowBuilder() {
               onDragOver={onDragOver}
               nodeTypes={nodeTypes}
               fitView
-              className="bg-muted/10"
+              className="bg-slate-50 dark:bg-slate-950/60"
             >
               <Controls />
               {showMinimap && <MiniMap nodeStrokeWidth={3} zoomable pannable />}
               <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
               
-              <Panel position="top-right" className="bg-background/80 backdrop-blur-sm p-2 rounded-lg border">
-                <div className="text-xs space-y-1">
+              <Panel position="top-right" className="bg-background/90 backdrop-blur-sm px-3 py-2 rounded-xl border shadow-sm">
+                <div className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                  Flow stats
+                </div>
+                <div className="text-xs flex flex-col gap-0.5">
                   <div>Nodes: {nodes.length}</div>
                   <div>Edges: {edges.length}</div>
                 </div>
@@ -743,56 +731,6 @@ export function ProductionWorkflowBuilder() {
           </div>
         </div>
       </div>
-
-      {/* Workflow Execution Input Dialog */}
-      <Dialog open={showExecuteDialog} onOpenChange={setShowExecuteDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Execute Workflow</DialogTitle>
-            <DialogDescription>
-              Provide an input message for your workflow
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Input Message</Label>
-              <Textarea
-                value={executionInput}
-                onChange={(e) => setExecutionInput(e.target.value)}
-                placeholder="Type your message here... (e.g., 'Analyze this data' or 'Generate a report')"
-                className="resize-none"
-                rows={4}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && e.ctrlKey && !isExecuting) {
-                    executeWorkflowWithInput();
-                  }
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                💡 Press Ctrl+Enter to execute • This message will be available as <code className="bg-muted px-1 py-0.5 rounded">{"{{ $json.message }}"}</code> in your nodes
-              </p>
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setShowExecuteDialog(false)} disabled={isExecuting}>
-              Cancel
-            </Button>
-            <Button onClick={executeWorkflowWithInput} disabled={isExecuting} className="gap-2">
-              {isExecuting ? (
-                <>
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
-                  Executing...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  Execute
-                </>
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Chat Node Input Dialog (During Execution) */}
       <Dialog open={showChatInputDialog} onOpenChange={(open) => !open && chatInputResolver && chatInputResolver("")}>
@@ -851,7 +789,7 @@ export function ProductionWorkflowBuilder() {
       {/* Enhanced Node Configuration Dialog */}
       {selectedNode && (
       <Dialog open={isNodeDialogOpen} onOpenChange={setIsNodeDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[720px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Configure {selectedNode.type?.replace("Node", "") || "Node"}</DialogTitle>
             <DialogDescription>
@@ -860,13 +798,37 @@ export function ProductionWorkflowBuilder() {
           </DialogHeader>
 
           <Tabs defaultValue="general" className="mt-4">
-            <TabsList className={`grid w-full ${selectedNode.type === "agentNode" ? "grid-cols-3" : "grid-cols-4"}`}>
-              <TabsTrigger value="general">General</TabsTrigger>
-              <TabsTrigger value="parameters">Parameters</TabsTrigger>
+            <TabsList
+              className={`grid w-full ${
+                selectedNode.type === "agentNode" ? "grid-cols-3" : "grid-cols-4"
+              } bg-muted/60 rounded-full p-1`}
+            >
+              <TabsTrigger
+                value="general"
+                className="rounded-full text-xs py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              >
+                General
+              </TabsTrigger>
+              <TabsTrigger
+                value="parameters"
+                className="rounded-full text-xs py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              >
+                Parameters
+              </TabsTrigger>
               {selectedNode.type !== "agentNode" && (
-                <TabsTrigger value="advanced">Advanced</TabsTrigger>
+                <TabsTrigger
+                  value="advanced"
+                  className="rounded-full text-xs py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                >
+                  Advanced
+                </TabsTrigger>
               )}
-              <TabsTrigger value="output">Output</TabsTrigger>
+              <TabsTrigger
+                value="output"
+                className="rounded-full text-xs py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              >
+                Output
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="general" className="space-y-4">

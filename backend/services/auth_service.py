@@ -210,6 +210,9 @@ class AuthService:
     
     def create_access_token(self, user: User) -> str:
         """Create a JWT access token"""
+        now = datetime.utcnow()
+        exp_time = now + timedelta(hours=JWT_EXPIRATION_HOURS)
+        
         payload = {
             "user_id": user.user_id,
             "email": user.email,
@@ -217,8 +220,8 @@ class AuthService:
             "roles": user.roles,
             "is_superuser": user.is_superuser,
             "tenant_id": user.tenant_id,
-            "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
-            "iat": datetime.utcnow()
+            "exp": int(exp_time.timestamp()),  # Convert to Unix timestamp
+            "iat": int(now.timestamp())  # Convert to Unix timestamp
         }
         
         token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)

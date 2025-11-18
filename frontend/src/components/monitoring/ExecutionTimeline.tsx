@@ -139,8 +139,11 @@ export function ExecutionTimeline() {
                       <Badge variant={exec.status === "completed" ? "default" : exec.status === "failed" ? "destructive" : "secondary"}>
                         {exec.status}
                       </Badge>
-                      <span className="text-sm font-mono text-muted-foreground">
-                        {exec.execution_id.substring(0, 8)}...
+                      <span className="font-medium">
+                        {exec.workflow_name || "Unknown Workflow"}
+                      </span>
+                      <span className="text-xs font-mono text-muted-foreground">
+                        ID: {exec.execution_id.substring(0, 8)}...
                       </span>
                     </div>
                     {exec.execution_time && (

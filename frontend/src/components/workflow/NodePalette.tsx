@@ -93,45 +93,122 @@ export function NodePalette() {
   };
 
   return (
-    <Card className="w-64 h-full flex flex-col overflow-hidden">
-      <div className="p-4 border-b flex-shrink-0">
-        <h3 className="font-semibold text-lg">Node Palette</h3>
+    <Card className="w-64 h-full flex flex-col overflow-hidden border-r bg-muted/20 shadow-sm">
+      <div className="p-4 border-b flex-shrink-0 bg-background/80">
+        <h3 className="font-semibold text-sm tracking-wide uppercase text-muted-foreground">
+          Node Library
+        </h3>
         <p className="text-xs text-muted-foreground mt-1">
-          Drag and drop nodes to the canvas
+          Drag nodes onto the canvas to build your flow
         </p>
       </div>
-      
+
       <ScrollArea className="flex-1 overflow-auto">
-        <div className="space-y-2 p-3">
-          {nodeTypeConfigs.map((config) => {
-            const Icon = config.icon;
-            return (
-              <div
-                key={config.type}
-                className={`p-3 rounded-lg border-2 cursor-move transition-all ${config.bgColor} dark:bg-gray-800 dark:border-gray-600`}
-                draggable
-                onDragStart={(e) => onDragStart(e, config.type)}
-              >
-                <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-md ${config.color} bg-white dark:bg-gray-700`}>
-                    <Icon className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-sm">{config.label}</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {config.description}
+        <div className="space-y-4 p-3">
+          <div>
+            <p className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase mb-1.5">
+              Flow
+            </p>
+            <div className="space-y-2">
+              {nodeTypeConfigs
+                .filter((n) => n.type === "startNode" || n.type === "endNode" || n.type === "chatNode" || n.type === "displayNode")
+                .map((config) => {
+                  const Icon = config.icon;
+                  return (
+                    <div
+                      key={config.type}
+                      className={`p-3 rounded-lg border cursor-move text-xs shadow-sm hover:shadow-md transition-all ${config.bgColor} dark:bg-gray-900/60 dark:border-gray-700`}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, config.type)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-md ${config.color} bg-white dark:bg-gray-800 shadow-sm`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-xs leading-tight">{config.label}</div>
+                          <div className="text-[11px] text-muted-foreground mt-1 line-clamp-2">
+                            {config.description}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+                  );
+                })}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase mb-1.5">
+              Logic & Control
+            </p>
+            <div className="space-y-2">
+              {nodeTypeConfigs
+                .filter((n) => n.type === "conditionNode" || n.type === "loopNode" || n.type === "errorHandlerNode")
+                .map((config) => {
+                  const Icon = config.icon;
+                  return (
+                    <div
+                      key={config.type}
+                      className={`p-3 rounded-lg border cursor-move text-xs shadow-sm hover:shadow-md transition-all ${config.bgColor} dark:bg-gray-900/60 dark:border-gray-700`}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, config.type)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-md ${config.color} bg-white dark:bg-gray-800 shadow-sm`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-xs leading-tight">{config.label}</div>
+                          <div className="text-[11px] text-muted-foreground mt-1 line-clamp-2">
+                            {config.description}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase mb-1.5">
+              Actions
+            </p>
+            <div className="space-y-2">
+              {nodeTypeConfigs
+                .filter((n) => n.type === "agentNode" || n.type === "actionNode")
+                .map((config) => {
+                  const Icon = config.icon;
+                  return (
+                    <div
+                      key={config.type}
+                      className={`p-3 rounded-lg border cursor-move text-xs shadow-sm hover:shadow-md transition-all ${config.bgColor} dark:bg-gray-900/60 dark:border-gray-700`}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, config.type)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-md ${config.color} bg-white dark:bg-gray-800 shadow-sm`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-xs leading-tight">{config.label}</div>
+                          <div className="text-[11px] text-muted-foreground mt-1 line-clamp-2">
+                            {config.description}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
         </div>
       </ScrollArea>
-      
-      <div className="p-3 border-t bg-muted/50">
-        <p className="text-xs text-muted-foreground text-center">
-          💡 Tip: Connect nodes by dragging from output to input
+
+      <div className="p-3 border-t bg-muted/60">
+        <p className="text-[11px] text-muted-foreground text-center">
+          Tip: Drag from a node handle to create connections
         </p>
       </div>
     </Card>

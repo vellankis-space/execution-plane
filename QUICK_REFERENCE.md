@@ -1,4 +1,4 @@
-# Quick Reference Guide - AI Agents Orchestration Platform
+# Quick Reference Guide - AI Agents Intelligentic AI
 
 ## 🚀 Quick Start
 

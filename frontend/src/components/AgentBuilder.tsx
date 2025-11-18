@@ -9,7 +9,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText, Key, MessageSquare, Upload, Link2, Type, Brain, Wrench, Shield, Plus, X, Home, Loader2 } from "lucide-react";
+import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText, Key, MessageSquare, Upload, Link2, Type, Brain, Wrench, Shield, Plus, X, Home, Loader2, RefreshCw, Server, CheckCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ToolConfigDialog } from "@/components/ToolConfigDialog";
@@ -27,91 +27,7 @@ const LLM_PROVIDERS = [
   { value: "mistral", label: "Mistral AI" },
 ];
 
-const MODELS = {
-  openai: [
-    "gpt-4o",
-    "gpt-4o-mini", 
-    "gpt-4-turbo",
-    "gpt-4",
-    "gpt-3.5-turbo",
-    "o1-preview",
-    "o1-mini"
-  ],
-  anthropic: [
-    "claude-sonnet-4-5",
-    "claude-opus-4-1",
-    "claude-3-7-sonnet",
-    "claude-3-5-sonnet",
-    "claude-3-5-haiku",
-    "claude-3-opus",
-    "claude-3-sonnet",
-    "claude-3-haiku"
-  ],
-  google: [
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b"
-  ],
-  groq: [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-70b-versatile",
-    "llama-3.1-8b-instant",
-    "mixtral-8x7b-32768",
-    "gemma-2-9b-it",
-    "llama-guard-3-8b"
-  ],
-  openrouter: [
-    "anthropic/claude-sonnet-4-5",
-    "openai/gpt-4o",
-    "google/gemini-2.5-pro",
-    "meta-llama/llama-3.3-70b-instruct",
-    "anthropic/claude-3-5-haiku",
-    "deepseek/deepseek-chat",
-    "qwen/qwen-2.5-72b-instruct",
-    "mistralai/mistral-large"
-  ],
-  together: [
-    "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
-    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-    "meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo",
-    "mistralai/Mixtral-8x22B-Instruct-v0.1",
-    "deepseek-ai/DeepSeek-V3",
-    "Qwen/Qwen2.5-72B-Instruct-Turbo"
-  ],
-  fireworks: [
-    "accounts/fireworks/models/llama-v3p3-70b-instruct",
-    "accounts/fireworks/models/llama-v3p1-405b-instruct",
-    "accounts/fireworks/models/mixtral-8x22b-instruct",
-    "accounts/fireworks/models/qwen2p5-72b-instruct",
-    "accounts/fireworks/models/deepseek-v3"
-  ],
-  cohere: [
-    "command-r-plus",
-    "command-r",
-    "command",
-    "command-light",
-    "command-r-08-2024",
-    "command-r-plus-08-2024"
-  ],
-  meta: [
-    "llama-3.3-70b",
-    "llama-3.2-90b-vision",
-    "llama-3.1-405b",
-    "llama-3.1-70b",
-    "llama-3.1-8b"
-  ],
-  mistral: [
-    "mistral-large-2411",
-    "mistral-large-2407",
-    "mistral-medium",
-    "mistral-small",
-    "mixtral-8x7b",
-    "pixtral-large-2411"
-  ],
-};
+// Models will be fetched dynamically from the API
 
 const AGENT_TYPES = [
   { value: "react", label: "ReAct" },
@@ -183,7 +99,6 @@ export function AgentBuilder() {
   const [agentFramework, setAgentFramework] = useState("langgraph");
   const [llmProvider, setLlmProvider] = useState("anthropic");
   const [llmModel, setLlmModel] = useState("claude-sonnet-4-5");
-  const [apiKey, setApiKey] = useState("");
   const [temperature, setTemperature] = useState([0.7]);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
@@ -208,6 +123,18 @@ export function AgentBuilder() {
   // Tool configurations
   const [toolConfigs, setToolConfigs] = useState<Record<string, any>>({});
   const [showToolConfig, setShowToolConfig] = useState<string | null>(null);
+
+  // Dynamic models state
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [providerApiKey, setProviderApiKey] = useState<string>("");
+  const [isUsingApiKey, setIsUsingApiKey] = useState(false);
+
+  // MCP Servers state
+  const [mcpServers, setMcpServers] = useState<any[]>([]);
+  const [selectedMcpServers, setSelectedMcpServers] = useState<string[]>([]);
+  const [mcpTools, setMcpTools] = useState<Record<string, any[]>>({});
+  const [loadingMcpServers, setLoadingMcpServers] = useState(false);
 
   // Fetch agent data if in edit mode
   useEffect(() => {
@@ -264,9 +191,99 @@ export function AgentBuilder() {
     fetchAgentData();
   }, [editAgentId]);
 
+  // Fetch models function
+  const fetchModels = async () => {
+    if (!llmProvider) return;
+    if (!providerApiKey.trim()) {
+      toast({
+        title: "API key required",
+        description: `Enter your ${llmProvider} API key to fetch models`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoadingModels(true);
+    setIsUsingApiKey(false);
+
+    try {
+      const url = `http://localhost:8000/api/v1/models/${llmProvider}?api_key=${encodeURIComponent(providerApiKey.trim())}`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableModels(data.models || []);
+        
+        setIsUsingApiKey(true);
+        toast({
+          title: "Models updated",
+          description: `Fetched real-time models from ${llmProvider}`,
+        });
+        
+        // Set first model as default if current model is not in the list
+        if (data.models && data.models.length > 0 && !data.models.includes(llmModel)) {
+          setLlmModel(data.models[0]);
+        }
+      } else {
+        console.error("Failed to fetch models for provider:", llmProvider);
+        setAvailableModels([]);
+        toast({
+          title: "API error",
+          description: "Unable to fetch models with the provided API key",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching models:", error);
+      setAvailableModels([]);
+      toast({
+        title: "Network error",
+        description: "Failed to connect to provider API",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  // Fetch models when provider changes (without API key)
+  useEffect(() => {
+    setAvailableModels([]);
+    setLlmModel("");
+    setProviderApiKey("");
+    setIsUsingApiKey(false);
+  }, [llmProvider]);
+
+  // Fetch MCP servers
+  useEffect(() => {
+    fetchMcpServers();
+  }, []);
+
+  const fetchMcpServers = async () => {
+    try {
+      setLoadingMcpServers(true);
+      const response = await fetch('http://localhost:8000/api/v1/mcp-servers');
+      if (response.ok) {
+        const data = await response.json();
+        setMcpServers(data);
+      }
+    } catch (error) {
+      console.error('Error fetching MCP servers:', error);
+    } finally {
+      setLoadingMcpServers(false);
+    }
+  };
+
+  const handleMcpServerToggle = (serverId: string) => {
+    setSelectedMcpServers(prev => 
+      prev.includes(serverId)
+        ? prev.filter(id => id !== serverId)
+        : [...prev, serverId]
+    );
+  };
+
   const handleProviderChange = (provider: string) => {
     setLlmProvider(provider);
-    setLlmModel(MODELS[provider as keyof typeof MODELS][0]);
+    // Model will be set automatically by the useEffect above
   };
 
   const handleToolToggle = (toolId: string) => {
@@ -399,7 +416,6 @@ export function AgentBuilder() {
       agent_type: agentType,
       llm_provider: llmProvider,
       llm_model: llmModel,
-      api_key: apiKey,
       temperature: temperature[0],
       system_prompt: systemPrompt,
       tools: selectedToolsList.length > 0 ? selectedToolsList : selectedTools,
@@ -409,7 +425,8 @@ export function AgentBuilder() {
       streaming_enabled: streamingEnabled,
       human_in_loop: humanInLoop,
       recursion_limit: parseInt(recursionLimit),
-      pii_config: pii_config
+      pii_config: pii_config,
+      mcp_servers: selectedMcpServers.length > 0 ? selectedMcpServers : null
     };
 
     try {
@@ -586,19 +603,39 @@ export function AgentBuilder() {
                 </div>
 
                 <div>
-                  <Label htmlFor="model" className="text-xs text-muted-foreground mb-2 block">Model</Label>
-                  <Select value={llmModel} onValueChange={setLlmModel}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Label htmlFor="model" className="text-xs text-muted-foreground">
+                      Model {loadingModels && <span className="text-xs">(Loading...)</span>}
+                    </Label>
+                    {isUsingApiKey && (
+                      <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded">
+                        Live API
+                      </span>
+                    )}
+                  </div>
+                  <Select value={llmModel} onValueChange={setLlmModel} disabled={loadingModels || availableModels.length === 0}>
                     <SelectTrigger id="model" className="h-9 bg-background">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-[300px]">
-                      {MODELS[llmProvider as keyof typeof MODELS].map(model => (
-                        <SelectItem key={model} value={model}>
-                          {model}
+                      {availableModels.length > 0 ? (
+                        availableModels.map(model => (
+                          <SelectItem key={model} value={model}>
+                            {model}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="loading" disabled>
+                          {loadingModels ? "Fetching models..." : "Enter API key to fetch models"}
                         </SelectItem>
-                      ))}
+                      )}
                     </SelectContent>
                   </Select>
+                  {availableModels.length === 0 && !loadingModels && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Provide your {llmProvider} API key below and fetch models to continue
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -620,19 +657,49 @@ export function AgentBuilder() {
                 </div>
               </div>
               
-              <div className="mt-4">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Key className="w-3.5 h-3.5 text-muted-foreground" />
-                  <Label htmlFor="api-key" className="text-xs text-muted-foreground">API Key</Label>
+              {/* Real-time Model Fetching Section */}
+              <div className="mt-4 p-3 bg-muted/50 rounded-md border border-border">
+                <div className="flex items-center gap-2 mb-2">
+                  <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Fetch Real-Time Models
+                    {isUsingApiKey && (
+                      <span className="ml-2 text-green-600">✓ Using API</span>
+                    )}
+                  </span>
                 </div>
-                <Input
-                  id="api-key"
-                  type="password"
-                  placeholder="sk-..."
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="h-9 bg-background"
-                />
+
+                <div className="space-y-2 mt-2">
+                  <Input
+                    type="password"
+                    placeholder={`Enter ${llmProvider} API key`}
+                    value={providerApiKey}
+                    onChange={(e) => setProviderApiKey(e.target.value)}
+                    className="h-8 bg-background text-xs"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    onClick={fetchModels}
+                    disabled={loadingModels}
+                  >
+                    {loadingModels ? (
+                      <>
+                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        Fetching...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-3 h-3 mr-1" />
+                        Fetch Latest Models
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Enter your API key to fetch the latest available models from {llmProvider}.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -775,6 +842,106 @@ export function AgentBuilder() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* MCP Servers */}
+            <div className="border border-border rounded-lg p-5 bg-card">
+              <div className="flex items-center gap-2 mb-4">
+                <Server className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium">MCP Servers</h3>
+                <span className="text-xs text-muted-foreground ml-auto">External Tool Integrations</span>
+              </div>
+              
+              {loadingMcpServers ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : mcpServers.length === 0 ? (
+                <div className="text-center py-8">
+                  <Server className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground mb-3">No MCP servers configured</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open('/mcp-servers', '_blank')}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1.5" />
+                    Add MCP Server
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid gap-3">
+                    {mcpServers.filter(s => s.status === 'active').map(server => (
+                      <div
+                        key={server.server_id}
+                        className="flex items-start space-x-3 p-3 rounded-md border border-border bg-background hover:bg-muted transition-colors cursor-pointer"
+                        onClick={() => handleMcpServerToggle(server.server_id)}
+                      >
+                        <Checkbox
+                          id={server.server_id}
+                          checked={selectedMcpServers.includes(server.server_id)}
+                          onCheckedChange={() => handleMcpServerToggle(server.server_id)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <label htmlFor={server.server_id} className="text-sm font-medium cursor-pointer block">
+                            {server.name}
+                          </label>
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                            {server.description || 'No description'}
+                          </p>
+                          <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Wrench className="w-3 h-3" />
+                              {server.tools_count} tools
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <FileText className="w-3 h-3" />
+                              {server.resources_count} resources
+                            </span>
+                            {server.transport_type && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
+                                {server.transport_type.toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {selectedMcpServers.includes(server.server_id) && (
+                          <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {mcpServers.filter(s => s.status !== 'active').length > 0 && (
+                    <div className="pt-3 border-t">
+                      <p className="text-xs text-muted-foreground mb-2">Inactive Servers:</p>
+                      <div className="space-y-2">
+                        {mcpServers.filter(s => s.status !== 'active').map(server => (
+                          <div
+                            key={server.server_id}
+                            className="flex items-center justify-between p-2 rounded-md bg-muted/50"
+                          >
+                            <span className="text-xs text-muted-foreground">{server.name}</span>
+                            <span className="text-xs px-2 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
+                              {server.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {selectedMcpServers.length > 0 && (
+                    <div className="pt-3 mt-3 border-t">
+                      <p className="text-xs text-muted-foreground">
+                        {selectedMcpServers.length} MCP server(s) selected. Their tools will be available to this agent.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Knowledge Base */}

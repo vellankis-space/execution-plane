@@ -1,7 +1,7 @@
 {
   "name": "orchestration-platform",
   "version": "1.0.0",
-  "description": "Enterprise Orchestration Platform for AI Agents and Workflows",
+  "description": "Enterprise Intelligentic AI for AI Agents and Workflows",
   "scripts": {
     "frontend": "cd frontend && npm run dev",
     "frontend:build": "cd frontend && npm run build",

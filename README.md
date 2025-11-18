@@ -1,6 +1,6 @@
-# Orchestration Platform - AI Agent & Workflow Management
+# Intelligentic AI - AI Agent & Workflow Management
 
-Enterprise-grade orchestration platform for managing AI agents and workflows. Build, deploy, monitor, and scale intelligent automation with advanced LangGraph capabilities.
+Enterprise-grade Intelligentic AI for managing AI agents and workflows. Build, deploy, monitor, and scale intelligent automation with advanced LangGraph capabilities.
 
 ## Features
 

@@ -8,6 +8,7 @@ import {
   Activity,
   Sparkles,
   Settings,
+  Server,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { UserMenu } from "@/components/auth/UserMenu";
@@ -18,6 +19,7 @@ const navigation = [
   { name: "Workflows", href: "/workflows", icon: Network },
   { name: "Chat", href: "/chat", icon: MessageSquare },
   { name: "Playground", href: "/playground", icon: Sparkles },
+  { name: "MCP Servers", href: "/mcp-servers", icon: Server },
   { name: "Monitoring", href: "/monitoring", icon: Activity },
 ];
 
@@ -40,7 +42,7 @@ export function Sidebar({ isCollapsed = false }: SidebarProps) {
         </div>
         <div>
           <h1 className="text-lg font-bold text-[hsl(var(--sidebar-foreground))]">
-            Orchestration Platform
+            Intelligentic AI
           </h1>
           <p className="text-xs text-[hsl(var(--sidebar-foreground))]/60">
             Agent & Workflow Management

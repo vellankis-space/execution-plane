@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON, Float
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from core.database import Base
 
 class Agent(Base):
@@ -26,3 +27,6 @@ class Agent(Base):
     tenant_id = Column(String, index=True)  # For multi-tenancy isolation
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    mcp_server_associations = relationship("AgentMCPServer", back_populates="agent", cascade="all, delete-orphan")

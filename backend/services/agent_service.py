@@ -25,9 +25,11 @@ from services.tools_service import ToolsService
 from services.cost_tracking_service import CostTrackingService
 from services.llm_service import LLMService
 from services.rate_limit_handler import RateLimitHandler, RateLimitError
+from services.fastmcp_manager import fastmcp_manager
 from middleware.pii_middleware import create_pii_middleware_from_config, PIIMiddleware
 
 from models.agent import Agent as AgentModel
+from models.mcp_server import AgentMCPServer, MCPServer
 from schemas.agent import AgentCreate, AgentInDB
 from core.config import settings
 from sqlalchemy import text
@@ -130,6 +132,18 @@ class AgentService:
         self.db.refresh(db_agent)
         print(f"Agent committed to database: {db_agent.agent_id}")
         
+        # Handle MCP server associations
+        if agent_data.mcp_servers:
+            for server_id in agent_data.mcp_servers:
+                association = AgentMCPServer(
+                    agent_id=agent_id,
+                    server_id=server_id,
+                    enabled="true"
+                )
+                self.db.add(association)
+            self.db.commit()
+            print(f"Added {len(agent_data.mcp_servers)} MCP server associations")
+        
         return AgentInDB.model_validate(db_agent)
     
     async def get_agent(self, agent_id: str, tenant_id: Optional[str] = None) -> Optional[AgentInDB]:
@@ -171,6 +185,76 @@ class AgentService:
             return True
         return False
     
+    async def get_agent_mcp_tools(self, agent_id: str) -> List[Any]:
+        """
+        Load MCP tools for an agent from associated MCP servers.
+        Returns a list of LangChain tools that can be used by the agent.
+        """
+        try:
+            # Get MCP server associations for this agent
+            associations = self.db.query(AgentMCPServer).filter(
+                AgentMCPServer.agent_id == agent_id,
+                AgentMCPServer.enabled == "true"
+            ).all()
+            
+            if not associations:
+                return []
+            
+            # Get server IDs
+            server_ids = [assoc.server_id for assoc in associations]
+            
+            # Get active MCP servers
+            servers = self.db.query(MCPServer).filter(
+                MCPServer.server_id.in_(server_ids),
+                MCPServer.status == "active"
+            ).all()
+            
+            if not servers:
+                logger.info(f"No active MCP servers found for agent {agent_id}")
+                return []
+            
+            # Collect tools from all MCP servers
+            mcp_tools = []
+            for server in servers:
+                try:
+                    # Get tools from FastMCP manager
+                    tools = await fastmcp_manager.get_tools(server.server_id)
+                    
+                    # Convert MCP tools to LangChain tools
+                    for tool_info in tools:
+                        # Create a LangChain tool wrapper for MCP tool
+                        @tool
+                        def mcp_tool_wrapper(
+                            server_id=server.server_id,
+                            tool_name=tool_info.get("name"),
+                            **kwargs
+                        ) -> str:
+                            """Dynamically created MCP tool"""
+                            import asyncio
+                            result = asyncio.run(
+                                fastmcp_manager.call_tool(server_id, tool_name, kwargs)
+                            )
+                            return str(result)
+                        
+                        # Set tool metadata
+                        mcp_tool_wrapper.name = f"{server.name}_{tool_info.get('name')}"
+                        mcp_tool_wrapper.description = tool_info.get('description', 'MCP tool')
+                        
+                        mcp_tools.append(mcp_tool_wrapper)
+                        
+                    logger.info(f"Loaded {len(tools)} tools from MCP server {server.name}")
+                    
+                except Exception as e:
+                    logger.error(f"Error loading tools from MCP server {server.name}: {e}")
+                    continue
+            
+            logger.info(f"Total MCP tools loaded for agent {agent_id}: {len(mcp_tools)}")
+            return mcp_tools
+            
+        except Exception as e:
+            logger.error(f"Error getting MCP tools for agent {agent_id}: {e}")
+            return []
+    
     async def update_agent(self, agent_id: str, agent_data: AgentCreate, tenant_id: Optional[str] = None) -> Optional[AgentInDB]:
         """Update an existing agent"""
         query = self.db.query(AgentModel).filter(AgentModel.agent_id == agent_id)
@@ -207,6 +291,24 @@ class AgentService:
         self.db.commit()
         self.db.refresh(db_agent)
         print(f"Agent updated in database: {db_agent.agent_id}")
+        
+        # Update MCP server associations
+        if agent_data.mcp_servers is not None:
+            # Remove existing associations
+            self.db.query(AgentMCPServer).filter(
+                AgentMCPServer.agent_id == agent_id
+            ).delete()
+            
+            # Add new associations
+            for server_id in agent_data.mcp_servers:
+                association = AgentMCPServer(
+                    agent_id=agent_id,
+                    server_id=server_id,
+                    enabled="true"
+                )
+                self.db.add(association)
+            self.db.commit()
+            print(f"Updated MCP server associations: {len(agent_data.mcp_servers)} servers")
         
         return AgentInDB.model_validate(db_agent)
 
@@ -918,6 +1020,16 @@ class AgentService:
         if hasattr(llm, 'bind_tools'):
             # Start with empty tools list - all tools come from external services
             tools = []
+            
+            # Load MCP tools first (from connected MCP servers)
+            try:
+                import asyncio
+                mcp_tools = asyncio.run(self.get_agent_mcp_tools(agent_config.agent_id))
+                if mcp_tools:
+                    tools.extend(mcp_tools)
+                    print(f"Loaded {len(mcp_tools)} MCP tools from connected servers")
+            except Exception as e:
+                print(f"Error loading MCP tools: {e}")
             
             # Add external tools if configured
             if hasattr(agent_config, 'tools') and agent_config.tools:

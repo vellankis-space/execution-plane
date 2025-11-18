@@ -180,7 +180,7 @@ export function WorkflowVisualization({
         </div>
       </div>
       
-      <div className="flex-1 border rounded-lg overflow-hidden relative bg-gray-50">
+      <div className="flex-1 border rounded-lg overflow-hidden relative bg-slate-50 dark:bg-slate-950/60">
         <svg
           ref={svgRef}
           className="w-full h-full"
@@ -283,8 +283,8 @@ export function WorkflowVisualization({
         </svg>
       </div>
       
-      <div className="mt-4 text-sm text-gray-600">
-        <p>Click and drag to pan • Use zoom buttons to adjust view</p>
+      <div className="mt-4 text-xs text-muted-foreground">
+        <p>Click and drag to pan · Use zoom controls to adjust the view</p>
       </div>
     </Card>
   );

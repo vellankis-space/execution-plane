@@ -151,10 +151,25 @@ export function ExpressionEditor({
         </DialogHeader>
 
         <Tabs defaultValue="editor" className="mt-4">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="editor">Editor</TabsTrigger>
-            <TabsTrigger value="examples">Examples</TabsTrigger>
-            <TabsTrigger value="variables">Variables</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3 bg-muted/60 rounded-full p-1">
+            <TabsTrigger
+              value="editor"
+              className="rounded-full text-xs py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+            >
+              Editor
+            </TabsTrigger>
+            <TabsTrigger
+              value="examples"
+              className="rounded-full text-xs py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+            >
+              Examples
+            </TabsTrigger>
+            <TabsTrigger
+              value="variables"
+              className="rounded-full text-xs py-1.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+            >
+              Variables
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="editor" className="space-y-4">
