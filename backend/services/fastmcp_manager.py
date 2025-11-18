@@ -10,8 +10,13 @@ from datetime import datetime
 from fastmcp import Client
 from fastmcp.exceptions import McpError
 import json
+import traceback
 
 logger = logging.getLogger(__name__)
+
+# Connection timeout settings
+CONNECTION_TIMEOUT = 30  # seconds
+PING_TIMEOUT = 10  # seconds
 
 
 @dataclass
@@ -83,6 +88,8 @@ class FastMCPManager:
         """
         Connect to an MCP server using FastMCP client.
         
+        CRITICAL: FastMCP Client MUST be used with 'async with' to establish connection!
+        
         Args:
             server_id: ID of the server to connect to
             
@@ -97,110 +104,146 @@ class FastMCPManager:
         
         try:
             config.status = "connecting"
-            logger.info(f"Connecting to MCP server: {server_id} ({config.name})")
+            logger.info(f"Connecting to MCP server: {server_id} ({config.name}) via {config.transport_type}")
+            logger.info(f"URL/Command: {config.url or config.command}")
             
             # Create FastMCP client based on transport type
-            client = await self._create_client(config)
+            client = self._create_client_instance(config)
             
-            # Store client
+            # Store client instance (but connection happens in async with)
             async with self._lock:
                 self.clients[server_id] = client
             
-            # Test connection with ping
-            await client.ping()
+            # ✅ CRITICAL: Use async with to establish connection!
+            # Without this, transport never connects and operations fail
+            logger.info(f"Establishing connection to {server_id}...")
+            async with asyncio.timeout(CONNECTION_TIMEOUT):
+                async with client:
+                    # Connection established! Now test it
+                    logger.info(f"Testing connection to {server_id} with ping...")
+                    try:
+                        await asyncio.wait_for(client.ping(), timeout=PING_TIMEOUT)
+                        logger.info(f"✓ Ping successful for {server_id}")
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Ping timeout for {server_id}, trying list_tools as fallback...")
+                        # Some servers don't support ping, try list_tools
+                        await asyncio.wait_for(client.list_tools(), timeout=PING_TIMEOUT)
+                        logger.info(f"✓ Fallback connection test (list_tools) successful for {server_id}")
+                    except Exception as ping_error:
+                        logger.warning(f"Ping failed for {server_id}: {ping_error}. Trying to list tools as fallback...")
+                        try:
+                            tools = await asyncio.wait_for(client.list_tools(), timeout=PING_TIMEOUT)
+                            logger.info(f"✓ Fallback connection test (list_tools) successful for {server_id}, found {len(tools)} tools")
+                        except Exception as list_error:
+                            raise Exception(f"Both ping and list_tools failed. Ping error: {ping_error}. List tools error: {list_error}")
+                    
+                    # Discover capabilities while connection is active
+                    logger.info(f"Discovering capabilities for {server_id}...")
+                    await self._discover_capabilities_in_context(server_id, client)
             
-            # Update status
+            # Connection test successful
             config.status = "active"
             config.last_connected = datetime.now()
             config.last_error = None
             
-            # Discover capabilities
-            await self._discover_capabilities(server_id)
-            
-            logger.info(f"Successfully connected to MCP server: {server_id}")
+            logger.info(f"✓ Successfully connected to MCP server: {server_id} (Tools: {config.tools_count}, Resources: {config.resources_count}, Prompts: {config.prompts_count})")
             return True
             
-        except Exception as e:
-            logger.error(f"Error connecting to MCP server {server_id}: {e}")
+        except asyncio.TimeoutError as e:
+            error_msg = f"Connection timeout after {CONNECTION_TIMEOUT}s - server may be unreachable"
+            logger.error(f"Timeout connecting to MCP server {server_id}: {error_msg}")
             config.status = "error"
-            config.last_error = str(e)
+            config.last_error = error_msg
+            
+            # Clean up
+            async with self._lock:
+                if server_id in self.clients:
+                    del self.clients[server_id]
+            return False
+            
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"Error connecting to MCP server {server_id}: {error_msg}")
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
+            config.status = "error"
+            config.last_error = error_msg
+            
+            # Clean up client if it was partially created
+            async with self._lock:
+                if server_id in self.clients:
+                    del self.clients[server_id]
+            
             return False
     
-    async def _create_client(self, config: MCPServerConfig) -> Client:
+    def _create_client_instance(self, config: MCPServerConfig) -> Client:
         """
-        Create FastMCP client based on configuration.
+        Create FastMCP Client instance.
+        
+        IMPORTANT: This only creates the instance. Connection is established
+        when the client is used within 'async with' context!
         
         Args:
             config: Server configuration
             
         Returns:
-            FastMCP Client instance
+            FastMCP Client instance (not yet connected)
         """
-        if config.transport_type == "http" or config.transport_type == "sse":
+        if config.transport_type in ["http", "sse"]:
             # HTTP/SSE transport
             if not config.url:
                 raise ValueError("URL required for HTTP/SSE transport")
             
-            # Build client configuration
-            client_config = config.url
+            logger.info(f"Creating {config.transport_type.upper()} client for: {config.url}")
             
-            # Add headers if needed
-            if config.headers or config.auth_token:
-                # For authenticated connections, we'll use the config parameter
-                client_config = {
-                    "url": config.url,
-                    "headers": config.headers.copy()
-                }
-                
-                if config.auth_token:
-                    if config.auth_type == "bearer":
-                        client_config["headers"]["Authorization"] = f"Bearer {config.auth_token}"
-                    else:
-                        client_config["headers"]["Authorization"] = config.auth_token
+            # Use URL as-is - FastMCP will handle endpoint detection
+            url = config.url.rstrip('/')  # Remove trailing slash
             
-            return Client(client_config)
+            # For SSE, append /sse if not present
+            if config.transport_type == "sse":
+                # Check if URL already has a known MCP endpoint
+                has_endpoint = any(endpoint in url.lower() for endpoint in ["/sse", "/mcp", "/sse/", "/mcp/"])
+                if not has_endpoint:
+                    url = url + "/sse"
+                    logger.info(f"Adjusted SSE URL to: {url}")
+            
+            # Create client - connection happens in async with!
+            # FastMCP Client constructor parameters:
+            # Client(transport, name=None, timeout=None, auth=None, ...)
+            return Client(url, timeout=PING_TIMEOUT)
             
         elif config.transport_type == "stdio":
             # STDIO transport (local script/process)
             if not config.command:
                 raise ValueError("Command required for STDIO transport")
             
+            logger.info(f"Creating STDIO client for command: {config.command}")
+            
             # FastMCP supports passing a Python script path directly
             if config.command.endswith(".py"):
-                return Client(config.command)
+                return Client(config.command, timeout=PING_TIMEOUT)
             
-            # For other commands, use stdio configuration
-            stdio_config = {
-                "transport": "stdio",
-                "command": config.command,
-                "args": config.args,
-                "env": config.env,
-            }
-            
-            if config.cwd:
-                stdio_config["cwd"] = config.cwd
-            
-            return Client(stdio_config)
+            # For command strings, FastMCP will auto-detect if it's a script
+            return Client(config.command, timeout=PING_TIMEOUT)
         
         else:
             raise ValueError(f"Unsupported transport type: {config.transport_type}")
     
-    async def _discover_capabilities(self, server_id: str):
+    async def _discover_capabilities_in_context(self, server_id: str, client: Client):
         """
-        Discover tools, resources, and prompts from server.
+        Discover tools, resources, and prompts from server within an active connection context.
+        
+        MUST be called within 'async with client:' block!
         
         Args:
             server_id: Server ID to discover from
+            client: Connected FastMCP Client instance
         """
-        if server_id not in self.clients:
-            return
-        
-        client = self.clients[server_id]
         config = self.servers[server_id]
         
         try:
-            # Discover tools
-            tools = await client.list_tools()
+            # Discover tools with timeout
+            logger.info(f"Listing tools from {server_id}...")
+            tools = await asyncio.wait_for(client.list_tools(), timeout=PING_TIMEOUT)
             self.cached_tools[server_id] = [
                 {
                     "name": tool.name,
@@ -210,37 +253,56 @@ class FastMCPManager:
                 for tool in tools
             ]
             config.tools_count = len(tools)
-            logger.info(f"Discovered {len(tools)} tools from {server_id}")
+            logger.info(f"✓ Discovered {len(tools)} tools from {server_id}")
             
-            # Discover resources
-            resources = await client.list_resources()
-            self.cached_resources[server_id] = [
-                {
-                    "uri": resource.uri,
-                    "name": resource.name,
-                    "description": resource.description,
-                    "mimeType": resource.mimeType
-                }
-                for resource in resources
-            ]
-            config.resources_count = len(resources)
-            logger.info(f"Discovered {len(resources)} resources from {server_id}")
+            # Discover resources with timeout
+            try:
+                logger.info(f"Listing resources from {server_id}...")
+                resources = await asyncio.wait_for(client.list_resources(), timeout=PING_TIMEOUT)
+                self.cached_resources[server_id] = [
+                    {
+                        "uri": resource.uri,
+                        "name": resource.name,
+                        "description": resource.description,
+                        "mimeType": resource.mimeType
+                    }
+                    for resource in resources
+                ]
+                config.resources_count = len(resources)
+                logger.info(f"✓ Discovered {len(resources)} resources from {server_id}")
+            except Exception as res_error:
+                logger.warning(f"Could not list resources from {server_id}: {res_error}")
+                config.resources_count = 0
             
-            # Discover prompts
-            prompts = await client.list_prompts()
-            self.cached_prompts[server_id] = [
-                {
-                    "name": prompt.name,
-                    "description": prompt.description,
-                    "arguments": prompt.arguments
-                }
-                for prompt in prompts
-            ]
-            config.prompts_count = len(prompts)
-            logger.info(f"Discovered {len(prompts)} prompts from {server_id}")
+            # Discover prompts with timeout
+            try:
+                logger.info(f"Listing prompts from {server_id}...")
+                prompts = await asyncio.wait_for(client.list_prompts(), timeout=PING_TIMEOUT)
+                self.cached_prompts[server_id] = [
+                    {
+                        "name": prompt.name,
+                        "description": prompt.description,
+                        "arguments": prompt.arguments
+                    }
+                    for prompt in prompts
+                ]
+                config.prompts_count = len(prompts)
+                logger.info(f"✓ Discovered {len(prompts)} prompts from {server_id}")
+            except Exception as prompt_error:
+                logger.warning(f"Could not list prompts from {server_id}: {prompt_error}")
+                config.prompts_count = 0
             
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout discovering capabilities from {server_id}")
+            config.tools_count = 0
+            config.resources_count = 0
+            config.prompts_count = 0
         except Exception as e:
             logger.error(f"Error discovering capabilities from {server_id}: {e}")
+            logger.error(f"Traceback:\n{traceback.format_exc()}")
+            config.tools_count = 0
+            config.resources_count = 0
+            config.prompts_count = 0
     
     async def disconnect_server(self, server_id: str) -> bool:
         """
@@ -312,6 +374,8 @@ class FastMCPManager:
         """
         Call a tool on an MCP server.
         
+        CRITICAL: Uses async with to establish connection for each call.
+        
         Args:
             server_id: Server ID
             tool_name: Tool name (unprefixed)
@@ -328,8 +392,10 @@ class FastMCPManager:
         client = self.clients[server_id]
         
         try:
-            result = await client.call_tool(tool_name, arguments)
-            return result.data if hasattr(result, 'data') else result
+            # ✅ CRITICAL: Use async with to establish connection!
+            async with client:
+                result = await client.call_tool(tool_name, arguments)
+                return result.data if hasattr(result, 'data') else result
         except McpError as e:
             logger.error(f"MCP error calling tool {tool_name} on {server_id}: {e}")
             raise
@@ -362,8 +428,10 @@ class FastMCPManager:
         client = self.clients[server_id]
         
         try:
-            result = await client.read_resource(uri)
-            return result
+            # ✅ Use async with to establish connection
+            async with client:
+                result = await client.read_resource(uri)
+                return result
         except Exception as e:
             logger.error(f"Error reading resource {uri} from {server_id}: {e}")
             raise
@@ -398,8 +466,10 @@ class FastMCPManager:
         client = self.clients[server_id]
         
         try:
-            result = await client.get_prompt(prompt_name, arguments or {})
-            return result.messages if hasattr(result, 'messages') else result
+            # ✅ Use async with to establish connection
+            async with client:
+                result = await client.get_prompt(prompt_name, arguments or {})
+                return result.messages if hasattr(result, 'messages') else result
         except Exception as e:
             logger.error(f"Error getting prompt {prompt_name} from {server_id}: {e}")
             raise
@@ -421,10 +491,12 @@ class FastMCPManager:
         config = self.servers[server_id]
         
         try:
-            await client.ping()
-            config.status = "active"
-            config.last_error = None
-            return True
+            # ✅ Use async with to establish connection
+            async with client:
+                await client.ping()
+                config.status = "active"
+                config.last_error = None
+                return True
         except Exception as e:
             logger.warning(f"Health check failed for {server_id}: {e}")
             config.status = "error"

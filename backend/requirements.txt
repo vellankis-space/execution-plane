@@ -66,7 +66,6 @@ opentelemetry-instrumentation-sqlalchemy==0.45b0
 
 # LLM Management & Observability
 litellm==1.52.0
-langfuse==2.50.0
 langchain-community==0.3.0
 
 # A2A Protocol & MCP

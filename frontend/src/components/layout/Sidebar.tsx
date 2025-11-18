@@ -19,7 +19,6 @@ const navigation = [
   { name: "Workflows", href: "/workflows", icon: Network },
   { name: "Chat", href: "/chat", icon: MessageSquare },
   { name: "Playground", href: "/playground", icon: Sparkles },
-  { name: "MCP Servers", href: "/mcp-servers", icon: Server },
   { name: "Monitoring", href: "/monitoring", icon: Activity },
 ];
 

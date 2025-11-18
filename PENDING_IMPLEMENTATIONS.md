@@ -123,25 +123,6 @@
 
 ---
 
-### 7. **Langfuse Integration - Cost Tracking API**
-**Status**: ⚠️ Placeholder
-**Location**: `backend/services/langfuse_integration.py` (line 112)
-
-**Issues**:
-- ❌ Cost tracking from Langfuse API - Returns None as placeholder
-- ⚠️ Comment says "This would need to be implemented based on Langfuse API"
-
-**Impact**: Cost tracking may not be accurate when using Langfuse
-**Priority**: Medium
-**Estimated Effort**: 1-2 days
-
-**Suggested Implementation**:
-- Use Langfuse Python SDK to query cost analytics
-- Implement proper API calls to Langfuse
-- Cache results for performance
-
----
-
 ### 8. **Database Migration Automation**
 **Status**: ⚠️ Manual Only
 **Location**: `backend/migrations/`
@@ -294,12 +275,11 @@
 
 **Total Estimated Effort**: 5-8 days
 
-### 🟡 Medium Priority (5 items)
+### 🟡 Medium Priority (4 items)
 5. Alerting Service - Email & Slack
 6. Agent Service - Real Token Streaming
-7. Langfuse Cost Tracking API
-8. Database Migration Automation
-9. Frontend Real-time Updates Verification
+7. Database Migration Automation
+8. Frontend Real-time Updates Verification
 
 **Total Estimated Effort**: 8-12 days
 
@@ -330,8 +310,7 @@
 
 ### Phase 3: Integrations & Infrastructure (Week 3)
 7. **Alerting Service - Email & Slack** (Medium Priority)
-8. **Langfuse Cost Tracking API** (Medium Priority)
-9. **Database Migration Automation** (Medium Priority)
+8. **Database Migration Automation** (Medium Priority)
 
 ### Phase 4: Code Quality (Week 4)
 10. **Error Handling Standardization** (Low Priority)

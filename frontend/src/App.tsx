@@ -14,7 +14,6 @@ import Monitoring from "./pages/Monitoring";
 import Audit from "./pages/Audit";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
-import MCPServers from "./pages/MCPServers";
 import { AgentBuilder } from "./components/AgentBuilder";
 import { NoCodeWorkflowBuilder, ProductionWorkflowBuilder } from "./components/workflow";
 
@@ -120,14 +119,6 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ProductionWorkflowBuilder />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/mcp-servers"
-                element={
-                  <ProtectedRoute>
-                    <MCPServers />
                   </ProtectedRoute>
                 }
               />

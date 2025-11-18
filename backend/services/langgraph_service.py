@@ -18,7 +18,6 @@ except ImportError:
     ToolNode = None
 
 from services.agent_service import AgentService
-from services.langfuse_integration import LangfuseIntegration
 from services.expression_evaluator import evaluate_expression, evaluate_condition
 from sqlalchemy.orm import Session
 
@@ -47,7 +46,6 @@ class LangGraphWorkflowService:
     def __init__(self, db: Session):
         self.db = db
         self.agent_service = AgentService(db)
-        self.langfuse = LangfuseIntegration()
         
         if not LANGGRAPH_AVAILABLE:
             logger.warning("LangGraph not installed. Install with: pip install langgraph")
@@ -537,21 +535,6 @@ class LangGraphWorkflowService:
         execution_id = str(uuid.uuid4())
         workflow_id = workflow_definition.get("workflow_id", "unknown")
         
-        # Start Langfuse trace
-        trace = None
-        try:
-            trace = self.langfuse.trace_workflow_execution(
-                workflow_id=workflow_id,
-                execution_id=execution_id,
-                metadata={
-                    "workflow_name": workflow_name,
-                    "engine": "langgraph",
-                    "input_data": input_data
-                }
-            )
-        except Exception as e:
-            logger.warning(f"Could not create Langfuse trace: {e}")
-        
         try:
             logger.info(f"Starting LangGraph workflow execution: {execution_id}")
             
@@ -604,9 +587,6 @@ class LangGraphWorkflowService:
             logger.info(f"LangGraph execution completed in {duration_ms}ms")
             logger.info(f"Completed steps: {final_state['completed_steps']}")
             logger.info(f"Failed steps: {final_state['failed_steps']}")
-            
-            # Langfuse trace is automatically tracked and flushed
-            logger.info(f"Langfuse trace ID: {trace.id if trace and hasattr(trace, 'id') else 'N/A'}")
             
             return final_state
             

@@ -9,10 +9,11 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText, Key, MessageSquare, Upload, Link2, Type, Brain, Wrench, Shield, Plus, X, Home, Loader2, RefreshCw, Server, CheckCircle } from "lucide-react";
+import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText, Key, MessageSquare, Upload, Link2, Type, Brain, Wrench, Shield, Plus, X, Home, Loader2, RefreshCw, Server, CheckCircle, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ToolConfigDialog } from "@/components/ToolConfigDialog";
+import { MCPServerModal } from "@/components/MCPServerModal";
 
 const LLM_PROVIDERS = [
   { value: "openai", label: "OpenAI" },
@@ -49,17 +50,6 @@ const AGENT_FRAMEWORKS = [
   { value: "autogen", label: "AutoGen" },
   { value: "google-adk", label: "Google ADK" },
   { value: "semantic-kernel", label: "Semantic Kernel" },
-];
-
-const MCP_SERVERS = [
-  { id: "mcp_filesystem", label: "Filesystem" },
-  { id: "mcp_github", label: "GitHub" },
-  { id: "mcp_postgres", label: "PostgreSQL" },
-  { id: "mcp_web_search", label: "Web Search" },
-  { id: "mcp_slack", label: "Slack" },
-  { id: "mcp_brave_search", label: "Brave Search" },
-  { id: "mcp_google_maps", label: "Google Maps" },
-  { id: "mcp_memory", label: "Memory" },
 ];
 
 const TOOLS = [
@@ -281,6 +271,76 @@ export function AgentBuilder() {
     );
   };
 
+  const handleDeleteMcpServer = async (serverId: string, serverName: string) => {
+    if (!confirm(`Are you sure you want to delete "${serverName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/v1/mcp-servers/${serverId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        toast({
+          title: 'Server Deleted',
+          description: `${serverName} has been deleted successfully`,
+        });
+        // Remove from selected servers if it was selected
+        setSelectedMcpServers(prev => prev.filter(id => id !== serverId));
+        // Refresh the server list
+        fetchMcpServers();
+      } else {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to delete server');
+      }
+    } catch (error: any) {
+      console.error('Error deleting MCP server:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete MCP server',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleReconnectMcpServer = async (serverId: string, serverName: string) => {
+    try {
+      toast({
+        title: 'Connecting...',
+        description: `Attempting to connect to ${serverName}`,
+      });
+
+      const response = await fetch(`http://localhost:8000/api/v1/mcp-servers/${serverId}/connect`, {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast({
+          title: 'Connected!',
+          description: `Successfully connected to ${serverName}. Found ${data.tools_count || 0} tools.`,
+        });
+        // Refresh the server list to show updated status
+        fetchMcpServers();
+      } else {
+        const error = await response.json();
+        toast({
+          title: 'Connection Failed',
+          description: error.detail || 'Failed to connect to MCP server',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error reconnecting to MCP server:', error);
+      toast({
+        title: 'Connection Error',
+        description: error.message || 'Failed to connect to MCP server',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleProviderChange = (provider: string) => {
     setLlmProvider(provider);
     // Model will be set automatically by the useEffect above
@@ -426,7 +486,8 @@ export function AgentBuilder() {
       human_in_loop: humanInLoop,
       recursion_limit: parseInt(recursionLimit),
       pii_config: pii_config,
-      mcp_servers: selectedMcpServers.length > 0 ? selectedMcpServers : null
+      mcp_servers: selectedMcpServers.length > 0 ? selectedMcpServers : null,
+      api_key: providerApiKey || ""  // Include API key if provided, empty string otherwise
     };
 
     try {
@@ -531,14 +592,35 @@ export function AgentBuilder() {
           setPIIStrategy("redact");
         }
       } else {
-        const error = await response.json();
-        throw new Error(error.detail || (isEditMode ? 'Failed to update agent' : 'Failed to create agent'));
+        const errorData = await response.json();
+        const errorMessage = typeof errorData.detail === 'string' 
+          ? errorData.detail 
+          : JSON.stringify(errorData.detail || errorData);
+        throw new Error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(isEditMode ? "Error updating agent:" : "Error creating agent:", error);
+      
+      // Extract a meaningful error message
+      let errorMessage = isEditMode ? "Failed to update agent. Please try again." : "Failed to create agent. Please try again.";
+      
+      if (error.message) {
+        // If it's a string, use it directly
+        if (typeof error.message === 'string') {
+          errorMessage = error.message;
+        } else {
+          // If it's an object, try to stringify it
+          try {
+            errorMessage = JSON.stringify(error.message);
+          } catch {
+            errorMessage = String(error.message);
+          }
+        }
+      }
+      
       toast({
         title: isEditMode ? "Error Updating Agent" : "Error Creating Agent",
-        description: error.message || (isEditMode ? "Failed to update agent. Please try again." : "Failed to create agent. Please try again."),
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -777,33 +859,6 @@ export function AgentBuilder() {
               </div>
             </div>
 
-            {/* MCP Servers */}
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <div className="flex items-center gap-2 mb-4">
-                <GitBranch className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">MCP Servers</h3>
-                <span className="text-xs text-muted-foreground ml-auto">Model Context Protocol</span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {MCP_SERVERS.map(server => (
-                  <div
-                    key={server.id}
-                    className="flex items-center space-x-2 p-2.5 rounded-md border border-border bg-background hover:bg-muted transition-colors cursor-pointer"
-                    onClick={() => handleToolToggle(server.id)}
-                  >
-                    <Checkbox
-                      id={server.id}
-                      checked={selectedTools.includes(server.id)}
-                      onCheckedChange={() => handleToolToggle(server.id)}
-                    />
-                    <label htmlFor={server.id} className="text-xs cursor-pointer flex-1 leading-tight">
-                      {server.label}
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* Tools */}
             <div className="border border-border rounded-lg p-5 bg-card">
               <div className="flex items-center gap-2 mb-4">
@@ -860,15 +915,7 @@ export function AgentBuilder() {
                 <div className="text-center py-8">
                   <Server className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground mb-3">No MCP servers configured</p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => window.open('/mcp-servers', '_blank')}
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-1.5" />
-                    Add MCP Server
-                  </Button>
+                  <MCPServerModal onServerAdded={fetchMcpServers} />
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -876,15 +923,18 @@ export function AgentBuilder() {
                     {mcpServers.filter(s => s.status === 'active').map(server => (
                       <div
                         key={server.server_id}
-                        className="flex items-start space-x-3 p-3 rounded-md border border-border bg-background hover:bg-muted transition-colors cursor-pointer"
-                        onClick={() => handleMcpServerToggle(server.server_id)}
+                        className="flex items-start space-x-3 p-3 rounded-md border border-border bg-background hover:bg-muted transition-colors"
                       >
                         <Checkbox
                           id={server.server_id}
                           checked={selectedMcpServers.includes(server.server_id)}
                           onCheckedChange={() => handleMcpServerToggle(server.server_id)}
+                          onClick={(e) => e.stopPropagation()}
                         />
-                        <div className="flex-1 min-w-0">
+                        <div 
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={() => handleMcpServerToggle(server.server_id)}
+                        >
                           <label htmlFor={server.server_id} className="text-sm font-medium cursor-pointer block">
                             {server.name}
                           </label>
@@ -907,9 +957,22 @@ export function AgentBuilder() {
                             )}
                           </div>
                         </div>
-                        {selectedMcpServers.includes(server.server_id) && (
-                          <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" />
-                        )}
+                        <div className="flex items-center gap-2">
+                          {selectedMcpServers.includes(server.server_id) && (
+                            <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" />
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteMcpServer(server.server_id, server.name);
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -921,12 +984,47 @@ export function AgentBuilder() {
                         {mcpServers.filter(s => s.status !== 'active').map(server => (
                           <div
                             key={server.server_id}
-                            className="flex items-center justify-between p-2 rounded-md bg-muted/50"
+                            className="flex flex-col gap-2 p-3 rounded-md bg-muted/50 border border-yellow-200 dark:border-yellow-900/30"
                           >
-                            <span className="text-xs text-muted-foreground">{server.name}</span>
-                            <span className="text-xs px-2 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
-                              {server.status}
-                            </span>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-foreground">{server.name}</span>
+                                <span className="text-xs px-2 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
+                                  {server.status}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-muted-foreground hover:text-blue-600"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleReconnectMcpServer(server.server_id, server.name);
+                                  }}
+                                  title="Retry connection"
+                                >
+                                  <RefreshCw className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteMcpServer(server.server_id, server.name);
+                                  }}
+                                  title="Delete server"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                            {server.last_error && (
+                              <div className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">
+                                <span className="font-medium">Error:</span> {server.last_error}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -940,6 +1038,10 @@ export function AgentBuilder() {
                       </p>
                     </div>
                   )}
+                  
+                  <div className="pt-3 mt-3 border-t flex justify-center">
+                    <MCPServerModal onServerAdded={fetchMcpServers} />
+                  </div>
                 </div>
               )}
             </div>

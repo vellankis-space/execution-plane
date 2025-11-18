@@ -12,7 +12,6 @@ import logging
 from services.monitoring_service import MonitoringService
 from services.enhanced_monitoring_service import EnhancedMonitoringService
 from services.tracing_service import TracingService
-from services.langfuse_integration import LangfuseIntegration
 from core.database import get_db
 from utils.timezone_utils import now_ist, to_ist_isoformat
 
@@ -384,35 +383,6 @@ async def get_streaming_metrics(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-@router.get("/langfuse/cost-analytics")
-async def get_langfuse_cost_analytics(
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
-    db: Session = Depends(get_db)
-):
-    """Get cost analytics from Langfuse"""
-    try:
-        langfuse = LangfuseIntegration()
-        if not langfuse.enabled:
-            return {
-                "enabled": False,
-                "message": "Langfuse not configured. Configure LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, and LANGFUSE_HOST to enable."
-            }
-        
-        # Get cost analytics
-        analytics = langfuse.get_cost_analytics(
-            start_date=start_date,
-            end_date=end_date
-        )
-        
-        return analytics or {
-            "enabled": True,
-            "message": "Langfuse cost analytics available",
-            "note": "Use Langfuse dashboard for detailed cost breakdown"
-        }
-    except Exception as e:
-        logger.error(f"Error getting Langfuse cost analytics: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/observability/overview")
@@ -423,7 +393,6 @@ async def get_observability_overview(
     try:
         monitoring_service = MonitoringService(db)
         enhanced_service = EnhancedMonitoringService(db)
-        langfuse = LangfuseIntegration()
         
         # Get all metrics
         health_metrics = await monitoring_service.get_system_health_metrics()
@@ -439,7 +408,6 @@ async def get_observability_overview(
             "timestamp": to_ist_isoformat(now_ist()),
             "system_health": health_metrics,
             "real_time_metrics": real_time_metrics,
-            "langfuse_enabled": langfuse.enabled,
             "tracing_enabled": True,  # OpenTelemetry is always enabled
             "recent_traces": [
                 {
@@ -453,7 +421,7 @@ async def get_observability_overview(
             "capabilities": {
                 "real_time_monitoring": True,
                 "distributed_tracing": True,
-                "cost_tracking": langfuse.enabled,
+                "cost_tracking": True,
                 "performance_analytics": True,
                 "resource_monitoring": True,
                 "log_aggregation": True

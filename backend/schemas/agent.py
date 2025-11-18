@@ -20,7 +20,7 @@ class AgentBase(BaseModel):
     mcp_servers: Optional[List[str]] = None  # List of MCP server IDs
 
 class AgentCreate(AgentBase):
-    api_key: str  # This will be encrypted and stored
+    api_key: Optional[str] = ""  # Optional: user's API key (will be encrypted if provided)
 
 class AgentInDB(AgentBase):
     agent_id: str

@@ -16,7 +16,6 @@ from services.agent_service import AgentService
 from services.error_handler import ErrorHandler, RetryPolicy, DEFAULT_RETRY_POLICY
 from services.alerting_service import AlertingService
 from services.cost_tracking_service import CostTrackingService
-from services.langfuse_integration import LangfuseIntegration
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,6 @@ logger = logging.getLogger(__name__)
 class WorkflowService:
     def __init__(self, db: Session):
         self.db = db
-        self.langfuse = LangfuseIntegration()  # For workflow tracing
 
     async def create_workflow(self, workflow_data: WorkflowCreate, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> Workflow:
         """Create a new workflow"""
@@ -209,7 +207,7 @@ class WorkflowService:
         return db_step
 
     async def execute_workflow(self, workflow_id: str, input_data: Dict[str, Any], tenant_id: Optional[str] = None) -> WorkflowExecution:
-        """Execute a workflow with the given input and Langfuse tracing"""
+        """Execute a workflow with the given input"""
         # Get the workflow (with tenant filtering)
         workflow = await self.get_workflow(workflow_id, tenant_id=tenant_id)
         if not workflow:
@@ -225,13 +223,6 @@ class WorkflowService:
         # Get the execution ID as a string
         execution_id = str(getattr(execution, 'execution_id'))
         
-        # Create Langfuse trace for workflow execution
-        if self.langfuse.enabled:
-            trace = self.langfuse.trace_workflow_execution(
-                workflow_id=workflow_id,
-                execution_id=execution_id,
-                metadata={"input_data_keys": list(input_data.keys())}
-            )
         
         # Capture initial resource usage
         try:

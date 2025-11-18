@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 
 from models.cost_tracking import APICall, CostBudget, CostAlert
 from models.agent import Agent as AgentModel
-from services.langfuse_integration import LangfuseIntegration
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,6 @@ class CostTrackingService:
     
     def __init__(self, db: Session):
         self.db = db
-        self.langfuse = LangfuseIntegration()  # For enhanced cost tracking
     
     def calculate_cost(
         self,
@@ -91,20 +89,6 @@ class CostTrackingService:
         total_tokens = input_tokens + output_tokens
         cost = self.calculate_cost(provider, model, input_tokens, output_tokens)
         
-        # Try to get accurate token counts from Langfuse if available
-        if self.langfuse.enabled and metadata and "langfuse_generation_id" in metadata:
-            try:
-                # Langfuse provides accurate token counts
-                # This would be populated from Langfuse callback
-                langfuse_tokens = metadata.get("langfuse_tokens", {})
-                if langfuse_tokens:
-                    input_tokens = langfuse_tokens.get("input_tokens", input_tokens)
-                    output_tokens = langfuse_tokens.get("output_tokens", output_tokens)
-                    total_tokens = input_tokens + output_tokens
-                    # Recalculate cost with accurate tokens
-                    cost = self.calculate_cost(provider, model, input_tokens, output_tokens)
-            except Exception as e:
-                logger.warning(f"Error getting Langfuse token counts: {e}")
         
         api_call = APICall(
             call_id=call_id,

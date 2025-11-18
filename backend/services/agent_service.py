@@ -51,7 +51,7 @@ class AgentService:
         # Initialize cost tracking service
         self.cost_service = CostTrackingService(db)
         
-        # Initialize LLM service (with LiteLLM and Langfuse support)
+        # Initialize LLM service (with LiteLLM support)
         self.llm_service = LLMService()
         
         # Ensure database schema compatibility (add columns if missing)
@@ -380,18 +380,7 @@ class AgentService:
                 return f"Error communicating with the agent: {error_msg}"
     
     async def execute_agent(self, agent_id: str, input_text: str, session_id: Optional[str] = None) -> str:
-        """Execute an agent with optional Langfuse tracing and automatic rate limit handling"""
-        from services.langfuse_integration import LangfuseIntegration
-        
-        langfuse = LangfuseIntegration()
-        trace = None
-        
-        if langfuse.enabled:
-            trace = langfuse.trace_agent_execution(
-                agent_id=agent_id,
-                user_id=session_id,
-                metadata={"input": input_text[:100]}  # Truncate for metadata
-            )
+        """Execute an agent with automatic rate limit handling"""
         agent = await self.get_agent(agent_id)
         if not agent:
             raise ValueError("Agent not found")
@@ -419,9 +408,7 @@ class AgentService:
                     agent=agent,
                     filtered_input=filtered_input,
                     session_id=session_id,
-                    user_id=session_id if session_id else f"agent_{agent_id}",
-                    langfuse=langfuse,
-                    trace=trace
+                    user_id=session_id if session_id else f"agent_{agent_id}"
                 )
             except Exception as e:
                 error_msg = str(e)
@@ -522,12 +509,10 @@ class AgentService:
     
     async def _execute_agent_with_fallback(
         self, 
-        agent: AgentInDB,
+        agent: AgentModel,
         filtered_input: str,
         session_id: Optional[str],
-        user_id: str,
-        langfuse: Any,
-        trace: Any
+        user_id: str
     ) -> str:
         """Execute agent with current configuration (helper method for retry logic)"""
         try:
@@ -943,7 +928,7 @@ class AgentService:
     
     def _initialize_llm(self, provider: str, model: str, temperature: float, user_api_key: Optional[str] = None):
         """Initialize the LLM based on provider and user API key"""
-        # Use LLMService which supports LiteLLM and Langfuse
+        # Use LLMService which supports LiteLLM
         use_litellm = os.getenv("USE_LITELLM", "true").lower() == "true"
         
         try:

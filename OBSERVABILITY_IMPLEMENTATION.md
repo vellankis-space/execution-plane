@@ -49,19 +49,7 @@ This document summarizes the comprehensive observability features implemented in
   - Predictive analytics
   - Resource usage trends
 
-### 5. **Langfuse Integration**
-- **Service**: `backend/services/langfuse_integration.py`
-- **Endpoints**:
-  - `GET /api/v1/observability/langfuse/cost-analytics` - Cost analytics
-  - `GET /api/v1/langfuse/traces` - LLM traces
-  - `GET /api/v1/langfuse/cost-analytics` - Cost tracking
-- **Features**:
-  - LLM call tracing
-  - Token usage tracking
-  - Cost calculation
-  - Performance monitoring
-
-### 6. **Server-Sent Events (SSE) Streaming**
+### 5. **Server-Sent Events (SSE) Streaming**
 - **Endpoint**: `GET /api/v1/observability/metrics/stream`
 - **Features**:
   - Streaming metrics updates
@@ -69,7 +57,7 @@ This document summarizes the comprehensive observability features implemented in
   - Enhanced metrics with resource usage
   - 5-second update interval
 
-### 7. **Observability Overview**
+### 6. **Observability Overview**
 - **Endpoint**: `GET /api/v1/observability/overview`
 - **Features**:
   - Comprehensive system status
@@ -110,10 +98,10 @@ This document summarizes the comprehensive observability features implemented in
 │  │   Service    │  │  Monitoring   │  │   Service   │ │
 │  └──────────────┘  └───────────────┘  └──────────────┘ │
 │                                                           │
-│  ┌──────────────┐  ┌──────────────┐                    │
-│  │   Langfuse   │  │  OpenTelemetry│                    │
-│  │ Integration  │  │  Integration │                    │
-│  └──────────────┘  └──────────────┘                    │
+│  ┌──────────────┐                                       │
+│  │OpenTelemetry │                                       │
+│  │ Integration  │                                       │
+│  └──────────────┘                                       │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -172,8 +160,8 @@ This document summarizes the comprehensive observability features implemented in
 - Failure analysis
 - Predictive analytics
 
-### Cost Metrics (Langfuse)
-- Token usage
+### Cost Metrics
+- Token usage tracking
 - Cost per execution
 - Cost by provider/model
 - Cost trends
@@ -268,7 +256,7 @@ eventSource.onmessage = (event) => {
 ### ✅ Implemented
 - [x] Real-time metrics via WebSocket
 - [x] Distributed tracing (OpenTelemetry)
-- [x] Cost tracking (Langfuse)
+- [x] Cost tracking
 - [x] Performance analytics
 - [x] Resource monitoring
 - [x] Failure analysis
@@ -293,11 +281,6 @@ eventSource.onmessage = (event) => {
 ### Environment Variables
 
 ```bash
-# Langfuse (optional)
-LANGFUSE_PUBLIC_KEY=your_public_key
-LANGFUSE_SECRET_KEY=your_secret_key
-LANGFUSE_HOST=https://cloud.langfuse.com
-
 # OpenTelemetry (optional - for external trace backend)
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 OTEL_SERVICE_NAME=execution-plane
@@ -337,7 +320,6 @@ The frontend automatically connects to WebSocket endpoints. The connection:
 ## 📚 Related Documentation
 
 - `ENHANCED_MONITORING_SUMMARY.md` - Enhanced monitoring features
-- `LITELLM_LANGFUSE_INTEGRATION.md` - Langfuse integration details
 - `PROJECT_REVIEW_INCOMPLETE_AREAS.md` - Known issues and improvements
 
 ---
