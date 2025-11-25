@@ -64,7 +64,7 @@ class MemoryService:
             # Get API key
             resolved_api_key = self._get_api_key(llm_provider, api_key)
             if not resolved_api_key:
-                logger.warning(f"No API key found for provider {llm_provider}")
+                logger.debug(f"No API key found for provider {llm_provider}, memory features disabled")
                 return None
             
             # Configure Mem0 with agent's LLM and custom extraction prompt
@@ -115,7 +115,7 @@ class MemoryService:
         user_id: str, 
         agent_id: Optional[str] = None,
         llm_provider: str = "groq",
-        llm_model: str = "llama-3.3-70b-versatile",
+        llm_model: str = "llama-3.1-8b-instant",
         api_key: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
@@ -139,7 +139,7 @@ class MemoryService:
         # Get memory instance for this agent's LLM config
         memory = self._get_memory_instance(llm_provider, llm_model, api_key)
         if not memory:
-            logger.warning(f"Could not get memory instance for {llm_provider}/{llm_model}")
+            logger.debug(f"Could not get memory instance for {llm_provider}/{llm_model}, skipping memory storage")
             return None
             
         try:
@@ -193,7 +193,7 @@ Focus on statements of the form "User prefers X", "User is allergic to Y", "User
         agent_id: Optional[str] = None, 
         top_k: int = 5,
         llm_provider: str = "groq",
-        llm_model: str = "llama-3.3-70b-versatile"
+        llm_model: str = "llama-3.1-8b-instant"
     ) -> Optional[List[Dict[str, Any]]]:
         """
         Search for memories using Mem0
@@ -214,7 +214,7 @@ Focus on statements of the form "User prefers X", "User is allergic to Y", "User
         # Get memory instance for this agent's LLM config
         memory = self._get_memory_instance(llm_provider, llm_model)
         if not memory:
-            logger.warning(f"Could not get memory instance for search")
+            logger.debug(f"Could not get memory instance for search, memory features disabled")
             return None
             
         try:
@@ -339,7 +339,7 @@ Focus on statements of the form "User prefers X", "User is allergic to Y", "User
         # Get memory instance
         memory = self._get_memory_instance(llm_provider, llm_model)
         if not memory:
-            logger.warning("Could not get memory instance for deleting session memories")
+            logger.debug("Could not get memory instance for deleting session memories, skipping")
             return False
             
         try:

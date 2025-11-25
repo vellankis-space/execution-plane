@@ -261,7 +261,7 @@ export function AgentChat() {
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Agent Chat</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Interact with your orchestrated agents in real-time
+              Interact with your agents in real-time
             </p>
           </div>
 

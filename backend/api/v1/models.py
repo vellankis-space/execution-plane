@@ -34,8 +34,8 @@ PROVIDER_ENDPOINTS = {
     },
     "openrouter": {
         "url": "https://openrouter.ai/api/v1/models",
-        "requires_key": False,
-        "env_key": None
+        "requires_key": True,
+        "env_key": "OPENROUTER_API_KEY"
     },
     "together": {
         "url": "https://api.together.xyz/v1/models",
@@ -57,6 +57,18 @@ PROVIDER_ENDPOINTS = {
         "requires_key": True,
         "env_key": "MISTRAL_API_KEY"
     },
+}
+
+# Known deprecated/decommissioned models to filter out from API responses
+DEPRECATED_MODELS = {
+    "groq": [
+        "llama-3.3-70b-specdec",        # Decommissioned - use llama-3.3-70b-versatile
+        "llama-3.2-90b-text-preview",   # Decommissioned
+        "llama-3.2-90b-vision-preview", # Decommissioned
+    ],
+    "openai": [],
+    "anthropic": [],
+    "google": [],
 }
 
 # Fallback models when API is unavailable or doesn't have a models endpoint
@@ -89,11 +101,14 @@ FALLBACK_MODELS = {
         "gemini-1.5-flash-8b"
     ],
     "groq": [
-        "llama-3.3-70b-versatile",
-        "llama-3.1-70b-versatile",
+        # Active models only - decommissioned models removed
+        "llama-3.3-70b-versatile",  # Recommended for most tasks
         "llama-3.1-8b-instant",
+        "llama3-70b-8192",  # Legacy but stable
+        "llama3-8b-8192",   # Legacy but stable
         "mixtral-8x7b-32768",
-        "gemma-2-9b-it",
+        "gemma2-9b-it",
+        "gemma-7b-it",
         "llama-guard-3-8b"
     ],
     "openrouter": [
@@ -146,10 +161,45 @@ FALLBACK_MODELS = {
     ],
 }
 
+def filter_deprecated_models(provider: str, models: List[str]) -> List[str]:
+    """
+    Filter out known deprecated/decommissioned models from a model list.
+    
+    Args:
+        provider: Provider name (e.g., 'groq', 'openai')
+        models: List of model IDs
+    
+    Returns:
+        Filtered list with deprecated models removed
+    """
+    deprecated = DEPRECATED_MODELS.get(provider, [])
+    if not deprecated:
+        return models
+    
+    original_count = len(models)
+    filtered_models = [m for m in models if m not in deprecated]
+    removed_count = original_count - len(filtered_models)
+    
+    if removed_count > 0:
+        print(f"Filtered out {removed_count} deprecated {provider} model(s): {[m for m in models if m in deprecated]}")
+    
+    return filtered_models
+
+
+def apply_search_filter(models: List[str], search: Optional[str]) -> List[str]:
+    """Filter models by case-insensitive substring match."""
+    if not search:
+        return models
+    query = search.strip().lower()
+    if not query:
+        return models
+    return [model for model in models if query in model.lower()]
+
 async def fetch_models_from_provider(provider: str, api_key: Optional[str] = None) -> List[str]:
     """
     Fetch models from provider's API if possible, otherwise return static list.
     This function always returns models - API keys are optional for real-time updates.
+    Automatically filters out known deprecated/decommissioned models.
     """
     
     # Always have fallback models available
@@ -187,6 +237,8 @@ async def fetch_models_from_provider(provider: str, api_key: Optional[str] = Non
             elif provider == "google":
                 # Google uses query parameter for API key
                 request_url = f"{endpoint_config['url']}?key={api_key}"
+            elif provider == "openrouter":
+                headers["Authorization"] = f"Bearer {api_key}"
             elif provider == "together":
                 headers["Authorization"] = f"Bearer {api_key}"
             elif provider == "fireworks":
@@ -205,14 +257,19 @@ async def fetch_models_from_provider(provider: str, api_key: Optional[str] = Non
                 if provider == "openai" or provider == "groq":
                     # OpenAI-compatible format
                     models = [model["id"] for model in data.get("data", [])]
-                    # Filter for chat models
+                    
+                    # Filter for chat models (OpenAI)
                     if provider == "openai":
                         models = [m for m in models if any(x in m for x in ["gpt-", "o1-"])]
+                    
+                    # Filter out deprecated models only (do not restrict to fallback list)
+                    models = filter_deprecated_models(provider, models)
                     return models if models else fallback_models
                 
                 elif provider == "anthropic":
                     # Anthropic format
                     models = [model["id"] for model in data.get("data", [])]
+                    models = filter_deprecated_models(provider, models)
                     return models if models else fallback_models
                 
                 elif provider == "google":
@@ -220,19 +277,34 @@ async def fetch_models_from_provider(provider: str, api_key: Optional[str] = Non
                     models = [model.get("name", "").replace("models/", "") for model in data.get("models", [])]
                     # Filter for generation models (not embedding models)
                     models = [m for m in models if "gemini" in m.lower() and m]
+                    models = filter_deprecated_models(provider, models)
                     return models if models else fallback_models
                 
                 elif provider == "openrouter":
-                    # OpenRouter format
-                    models = [model["id"] for model in data.get("data", [])]
-                    # Get top models
-                    return models[:20] if models else fallback_models
+                    # OpenRouter format - return all text-capable models
+                    models = []
+                    for model_info in data.get("data", []):
+                        model_id = model_info.get("id")
+                        if not model_id:
+                            continue
+                        architecture = model_info.get("architecture", {}) or {}
+                        output_modalities = architecture.get("output_modalities") or []
+                        # Keep models that can generate text (default to True if unspecified)
+                        supports_text = (not output_modalities) or any(
+                            isinstance(modality, str) and modality.lower() == "text"
+                            for modality in output_modalities
+                        )
+                        if supports_text:
+                            models.append(model_id)
+                    models = filter_deprecated_models(provider, models)
+                    return models if models else fallback_models
                 
                 elif provider == "together":
                     # Together AI format
                     models = [model["id"] for model in data.get("data", [])]
                     # Filter for instruction-tuned models
                     models = [m for m in models if "instruct" in m.lower() or "turbo" in m.lower()]
+                    models = filter_deprecated_models(provider, models)
                     return models[:15] if models else fallback_models
                 
                 elif provider == "fireworks":
@@ -240,16 +312,19 @@ async def fetch_models_from_provider(provider: str, api_key: Optional[str] = Non
                     models = [model["id"] for model in data.get("data", [])]
                     # Filter for text generation models
                     models = [m for m in models if not any(x in m.lower() for x in ["embed", "whisper", "vision"])]
+                    models = filter_deprecated_models(provider, models)
                     return models[:20] if models else fallback_models
                 
                 elif provider == "cohere":
                     # Cohere format
                     models = [model["name"] for model in data.get("models", [])]
+                    models = filter_deprecated_models(provider, models)
                     return models if models else fallback_models
                 
                 elif provider == "mistral":
                     # Mistral format (OpenAI-compatible)
                     models = [model["id"] for model in data.get("data", [])]
+                    models = filter_deprecated_models(provider, models)
                     return models if models else fallback_models
             
             # Fallback on any error or non-200 response
@@ -266,7 +341,11 @@ async def get_providers():
     return list(FALLBACK_MODELS.keys())
 
 @router.get("/{provider}", response_model=ModelResponse)
-async def get_models_by_provider(provider: str, api_key: Optional[str] = None):
+async def get_models_by_provider(
+    provider: str,
+    api_key: Optional[str] = None,
+    search: Optional[str] = None
+):
     """
     Get available models for a specific provider.
     
@@ -281,6 +360,7 @@ async def get_models_by_provider(provider: str, api_key: Optional[str] = None):
     
     # Fetch models (will use API if key available, otherwise returns static list)
     models = await fetch_models_from_provider(provider, api_key)
+    models = apply_search_filter(models, search)
     
     return ModelResponse(
         provider=provider,
@@ -288,7 +368,7 @@ async def get_models_by_provider(provider: str, api_key: Optional[str] = None):
     )
 
 @router.get("/", response_model=Dict[str, List[str]])
-async def get_all_models():
+async def get_all_models(search: Optional[str] = None):
     """
     Get all available models for all providers.
     
@@ -301,10 +381,21 @@ async def get_all_models():
     for provider in FALLBACK_MODELS.keys():
         try:
             models = await fetch_models_from_provider(provider)
-            all_models[provider] = models
+            filtered = apply_search_filter(models, search)
+            if search:
+                if filtered:
+                    all_models[provider] = filtered
+            else:
+                all_models[provider] = filtered
         except Exception as e:
             print(f"Error fetching models for {provider}: {e}")
             # Always return fallback models - users can still see all models
-            all_models[provider] = FALLBACK_MODELS.get(provider, [])
-    
+            fallback = FALLBACK_MODELS.get(provider, [])
+            filtered_fallback = apply_search_filter(fallback, search)
+            if not search or filtered_fallback:
+                all_models[provider] = filtered_fallback
+
+    # If search query supplied, omit providers with no matches
+    if search:
+        return all_models
     return all_models

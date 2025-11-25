@@ -4,7 +4,7 @@ API endpoints for alerting management
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from services.alerting_service import AlertingService
 from core.database import get_db
@@ -54,8 +54,7 @@ class AlertResponse(BaseModel):
     resolved_at: Optional[str]
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Alert Rule Endpoints

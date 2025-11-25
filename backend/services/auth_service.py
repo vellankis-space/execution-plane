@@ -6,7 +6,7 @@ import hashlib
 import secrets
 import logging
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from passlib.context import CryptContext
@@ -135,7 +135,7 @@ class AuthService:
             return None
         
         # Update last login
-        user.last_login = datetime.utcnow()
+        user.last_login = datetime.now(timezone.utc)
         self.db.commit()
         
         return user
@@ -149,7 +149,7 @@ class AuthService:
         """Create a user session"""
         session_id = str(uuid.uuid4())
         token = secrets.token_urlsafe(32)
-        expires_at = datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
         
         session = UserSession(
             session_id=session_id,
@@ -210,7 +210,7 @@ class AuthService:
     
     def create_access_token(self, user: User) -> str:
         """Create a JWT access token"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         exp_time = now + timedelta(hours=JWT_EXPIRATION_HOURS)
         
         payload = {

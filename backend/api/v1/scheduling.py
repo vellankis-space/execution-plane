@@ -4,7 +4,7 @@ Workflow scheduling API endpoints
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from services.scheduling_service import SchedulingService
 from core.database import get_db
@@ -52,8 +52,7 @@ class ScheduleResponse(BaseModel):
     created_by: Optional[str]
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Schedule Endpoints

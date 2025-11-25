@@ -4,7 +4,7 @@ API endpoints for cost tracking
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 
 from services.cost_tracking_service import CostTrackingService
@@ -46,7 +46,7 @@ async def get_cost_summary(
     """Get cost summary for a time period"""
     try:
         if not start_date:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
             start_date = end_date - timedelta(days=days)
         
         cost_service = CostTrackingService(db)

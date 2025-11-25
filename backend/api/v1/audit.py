@@ -4,8 +4,8 @@ Audit logging API endpoints
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime, timedelta
-from pydantic import BaseModel
+from datetime import datetime, timedelta, timezone
+from pydantic import BaseModel, ConfigDict
 
 from services.audit_service import AuditService
 from core.database import get_db
@@ -33,8 +33,7 @@ class AuditLogResponse(BaseModel):
     metadata: dict
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Audit Log Endpoints
@@ -107,7 +106,7 @@ async def get_audit_summary(
     """Get audit log summary statistics (admin only)"""
     try:
         if not start_date:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
             start_date = end_date - timedelta(days=days)
         
         audit_service = AuditService(db)

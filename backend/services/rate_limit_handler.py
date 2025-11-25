@@ -21,15 +21,14 @@ class RateLimitHandler:
         "groq": [
             # Llama 3.3 models (newest, most capable)
             "llama-3.3-70b-versatile",
-            "llama-3.3-70b-specdec",
+            # Note: llama-3.3-70b-specdec has been DECOMMISSIONED
+            # Note: llama-3.1-70b-versatile has been DECOMMISSIONED
             
             # Llama 3.1 models (very capable)
-            "llama-3.1-70b-versatile", 
             "llama-3.1-8b-instant",
             
             # Llama 3.2 models (newer variants with vision support)
-            "llama-3.2-90b-text-preview",
-            "llama-3.2-90b-vision-preview",
+            # Note: llama-3.2-90b-text-preview has been DECOMMISSIONED
             "llama-3.2-11b-text-preview",
             "llama-3.2-11b-vision-preview",
             "llama-3.2-3b-preview",

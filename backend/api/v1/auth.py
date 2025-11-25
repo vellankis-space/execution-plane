@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Header, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from datetime import datetime
 
 from services.auth_service import AuthService
@@ -41,8 +41,7 @@ class UserResponse(BaseModel):
     roles: List[str]
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class LoginResponse(BaseModel):

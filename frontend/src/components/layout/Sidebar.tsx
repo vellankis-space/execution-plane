@@ -17,6 +17,7 @@ const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Agents", href: "/agents", icon: Brain },
   { name: "Workflows", href: "/workflows", icon: Network },
+  { name: "MCP Catalog", href: "/mcp-servers", icon: Server },
   { name: "Chat", href: "/chat", icon: MessageSquare },
   { name: "Playground", href: "/playground", icon: Sparkles },
   { name: "Monitoring", href: "/monitoring", icon: Activity },

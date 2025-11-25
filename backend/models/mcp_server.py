@@ -4,7 +4,7 @@ Database models for storing MCP server configurations
 """
 from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, Table, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from core.database import Base
 
 
@@ -42,8 +42,8 @@ class MCPServer(Base):
     prompts_count = Column(Integer, default=0)
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     agent_associations = relationship("AgentMCPServer", back_populates="mcp_server", cascade="all, delete-orphan")
@@ -60,8 +60,9 @@ class AgentMCPServer(Base):
     # Configuration specific to this agent-server relationship
     enabled = Column(String, default="true")  # SQLite doesn't have boolean
     priority = Column(Integer, default=0)  # For ordering multiple servers
+    selected_tools = Column(JSON, nullable=True)  # List of selected tool names (null = all tools)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     agent = relationship("Agent", back_populates="mcp_server_associations")

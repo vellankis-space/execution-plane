@@ -4,7 +4,7 @@ Human-in-the-loop API endpoints
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from services.human_in_loop_service import HumanInLoopService
 from core.database import get_db
@@ -50,8 +50,7 @@ class TaskResponse(BaseModel):
     created_at: str
     expires_at: Optional[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskApprovalRequest(BaseModel):

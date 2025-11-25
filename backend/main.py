@@ -43,11 +43,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Setup distributed tracing
-try:
-    setup_tracing(app, engine)
-except Exception as e:
-    print(f"Warning: Could not setup tracing: {e}")
+if settings.ENABLE_TRACING:
+    # Setup distributed tracing
+    try:
+        setup_tracing(app, engine)
+    except Exception as e:
+        print(f"Warning: Could not setup tracing: {e}")
 
 # Add CORS middleware to allow frontend communication
 app.add_middleware(

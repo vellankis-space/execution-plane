@@ -49,6 +49,7 @@ Enterprise-grade Intelligentic AI for managing AI agents and workflows. Build, d
    ANTHROPIC_API_KEY=your_anthropic_api_key
    GROQ_API_KEY=your_groq_api_key
    SECRET_KEY=your_secret_key_for_encryption
+   ENABLE_TRACING=false  # optional: set to false to skip OpenTelemetry locally
    ```
 
 5. Install and set up Ollama for local embeddings:
@@ -76,8 +77,10 @@ npm run dev
 **Backend:**
 ```bash
 cd backend
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+ENABLE_TRACING=false python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+Setting `ENABLE_TRACING=false` ensures OpenTelemetry instrumentation stays disabled for local runs. Omit the flag (or set it to `true`) when you want tracing active.
 
 ## Supported LLM Providers
 

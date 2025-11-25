@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
+import json
 
 from core.database import get_db
 from models.mcp_server import MCPServer, AgentMCPServer
@@ -241,7 +242,7 @@ async def update_mcp_server(
         if server_data.cwd is not None:
             server.cwd = server_data.cwd
         
-        server.updated_at = datetime.utcnow()
+        server.updated_at = datetime.now(timezone.utc)
         
         db.commit()
         db.refresh(server)
@@ -331,6 +332,25 @@ async def connect_mcp_server(
         raise HTTPException(status_code=404, detail="MCP server not found")
     
     try:
+        # Ensure the server is registered with FastMCP manager before connecting.
+        # This is important after backend restarts where the in-memory FastMCP
+        # manager state is empty but the database still has MCP server records.
+        config = MCPServerConfig(
+            server_id=server.server_id,
+            name=server.name,
+            description=server.description or "",
+            transport_type=server.transport_type,
+            url=server.url,
+            headers=server.headers or {},
+            auth_type=server.auth_type,
+            auth_token=server.auth_token,
+            command=server.command,
+            args=server.args or [],
+            env=server.env or {},
+            cwd=server.cwd
+        )
+        await fastmcp_manager.register_server(config)
+        
         # Attempt connection
         success = await fastmcp_manager.connect_server(server_id)
         
@@ -339,7 +359,7 @@ async def connect_mcp_server(
             status_info = await fastmcp_manager.get_server_status(server_id)
             
             server.status = "active"
-            server.last_connected = datetime.utcnow()
+            server.last_connected = datetime.now(timezone.utc)
             server.last_error = None
             server.tools_count = status_info.get("tools_count", 0)
             server.resources_count = status_info.get("resources_count", 0)
@@ -355,18 +375,57 @@ async def connect_mcp_server(
                 "prompts_count": server.prompts_count
             }
         else:
+            # Get error details from manager
+            status_info = await fastmcp_manager.get_server_status(server_id)
+            error_message = status_info.get("last_error", "Connection failed")
+            
             server.status = "error"
-            server.last_error = "Connection failed"
+            server.last_error = error_message
             db.commit()
             
-            raise HTTPException(status_code=500, detail="Failed to connect to MCP server")
+            raise HTTPException(
+                status_code=503,  # Service Unavailable
+                detail={
+                    "error": "MCP_SERVER_UNAVAILABLE",
+                    "message": error_message,
+                    "server_id": server_id,
+                    "server_name": server.name,
+                    "suggestion": "This appears to be a temporary issue with the external MCP service. Please try again in a few minutes."
+                }
+            )
             
+    except HTTPException:
+        # Re-raise HTTP exceptions without modification
+        raise
     except Exception as e:
         logger.error(f"Error connecting to MCP server {server_id}: {e}")
+        error_msg = str(e)
+        
+        # Provide helpful error message
+        if "500" in error_msg or "Internal Server Error" in error_msg:
+            detail_msg = "The MCP server is experiencing technical issues (HTTP 500). This is a temporary problem with the service provider."
+            suggestion = "Please wait a few minutes and try again. If the issue persists, the service provider may be experiencing extended downtime."
+        elif "connection" in error_msg.lower() or "timeout" in error_msg.lower():
+            detail_msg = "Unable to reach the MCP server."
+            suggestion = "Please check if the server URL is correct and the service is online."
+        else:
+            detail_msg = error_msg
+            suggestion = "Please check the server configuration and try again."
+        
         server.status = "error"
-        server.last_error = str(e)
+        server.last_error = detail_msg
         db.commit()
-        raise HTTPException(status_code=500, detail=str(e))
+        
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "MCP_CONNECTION_FAILED",
+                "message": detail_msg,
+                "server_id": server_id,
+                "server_name": server.name,
+                "suggestion": suggestion
+            }
+        )
 
 
 @router.post("/{server_id}/disconnect")
@@ -396,12 +455,57 @@ async def disconnect_mcp_server(
 
 
 @router.get("/{server_id}/tools")
-async def get_mcp_server_tools(server_id: str):
+async def get_mcp_server_tools(server_id: str, db: Session = Depends(get_db)):
     """
     Get available tools from an MCP server.
     """
     try:
+        # Ensure server exists in DB
+        server = db.query(MCPServer).filter(MCPServer.server_id == server_id).first()
+        if not server:
+            raise HTTPException(status_code=404, detail="MCP server not found")
+
+        # Ensure server is registered with FastMCP manager (handles backend restarts)
+        if server_id not in fastmcp_manager.servers:
+            headers = server.headers
+            if isinstance(headers, str) and headers:
+                headers = json.loads(headers)
+            headers = headers or {}
+
+            args = server.args
+            if isinstance(args, str) and args:
+                args = json.loads(args)
+            args = args or []
+
+            env = server.env
+            if isinstance(env, str) and env:
+                env = json.loads(env)
+            env = env or {}
+
+            config = MCPServerConfig(
+                server_id=server.server_id,
+                name=server.name,
+                description=server.description or "",
+                transport_type=server.transport_type,
+                url=server.url,
+                headers=headers,
+                auth_type=server.auth_type,
+                auth_token=server.auth_token,
+                command=server.command,
+                args=args,
+                env=env,
+                cwd=server.cwd,
+                status=server.status
+            )
+            await fastmcp_manager.register_server(config)
+
+        # Attempt to connect/discover tools if not cached yet
         tools = await fastmcp_manager.get_tools(server_id)
+        if not tools:
+            logger.info(f"Tools not cached for {server_id}. Triggering reconnection.")
+            await fastmcp_manager.connect_server(server_id)
+            tools = await fastmcp_manager.get_tools(server_id)
+
         return {"server_id": server_id, "tools": tools, "count": len(tools)}
     except Exception as e:
         logger.error(f"Error getting tools from MCP server {server_id}: {e}")

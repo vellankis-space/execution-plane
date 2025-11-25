@@ -2,6 +2,13 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
+
+class MCPServerConfig(BaseModel):
+    """Configuration for MCP server association with tool selection"""
+    server_id: str
+    selected_tools: Optional[List[str]] = None  # None = all tools, or specific tool names
+
+
 class AgentBase(BaseModel):
     name: str
     agent_type: str
@@ -17,7 +24,8 @@ class AgentBase(BaseModel):
     human_in_loop: bool
     recursion_limit: int
     pii_config: Optional[Dict[str, Any]] = None  # PII filtering configuration
-    mcp_servers: Optional[List[str]] = None  # List of MCP server IDs
+    mcp_servers: Optional[List[str]] = None  # List of MCP server IDs (backward compatibility)
+    mcp_server_configs: Optional[List[MCPServerConfig]] = None  # MCP servers with tool selection
 
 class AgentCreate(AgentBase):
     api_key: Optional[str] = ""  # Optional: user's API key (will be encrypted if provided)

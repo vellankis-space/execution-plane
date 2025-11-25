@@ -8,7 +8,7 @@ from services.agent_service import AgentService
 from services.tools_service import ToolsService
 from core.database import get_db
 from middleware.tenant_middleware import get_current_tenant_id
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 # Response model that excludes sensitive information like encrypted API keys
 class AgentResponse(BaseModel):
@@ -28,8 +28,7 @@ class AgentResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Memory-related models
 class MemoryAddRequest(BaseModel):
@@ -112,6 +111,37 @@ async def delete_agent(agent_id: str, db: Session = Depends(get_db)):
         if not success:
             raise HTTPException(status_code=404, detail="Agent not found")
         return {"message": "Agent deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{agent_id}/mcp-servers")
+async def get_agent_mcp_servers(agent_id: str, db: Session = Depends(get_db)):
+    """Get MCP server associations for an agent with selected tools"""
+    try:
+        from models.mcp_server import AgentMCPServer, MCPServer
+        
+        # Get associations
+        associations = db.query(AgentMCPServer).filter(
+            AgentMCPServer.agent_id == agent_id
+        ).all()
+        
+        result = []
+        for assoc in associations:
+            # Get server details
+            server = db.query(MCPServer).filter(
+                MCPServer.server_id == assoc.server_id
+            ).first()
+            
+            if server:
+                result.append({
+                    "server_id": assoc.server_id,
+                    "server_name": server.name,
+                    "enabled": assoc.enabled == "true",
+                    "selected_tools": assoc.selected_tools,
+                    "priority": assoc.priority
+                })
+        
+        return {"agent_id": agent_id, "mcp_servers": result}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

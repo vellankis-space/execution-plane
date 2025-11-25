@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from services.versioning_service import VersioningService
 from core.database import get_db
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 router = APIRouter()
 
@@ -20,8 +20,7 @@ class AgentVersionResponse(BaseModel):
     created_at: str
     created_by: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkflowVersionResponse(BaseModel):
@@ -31,8 +30,7 @@ class WorkflowVersionResponse(BaseModel):
     created_at: str
     created_by: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class VersionComparisonResponse(BaseModel):

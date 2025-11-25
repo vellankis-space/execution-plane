@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import { toast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ToolConfigDialog } from "@/components/ToolConfigDialog";
 import { MCPServerModal } from "@/components/MCPServerModal";
+import MCPToolSelector from "@/components/MCPToolSelector";
 
 const LLM_PROVIDERS = [
   { value: "openai", label: "OpenAI" },
@@ -119,11 +120,12 @@ export function AgentBuilder() {
   const [loadingModels, setLoadingModels] = useState(false);
   const [providerApiKey, setProviderApiKey] = useState<string>("");
   const [isUsingApiKey, setIsUsingApiKey] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
 
   // MCP Servers state
   const [mcpServers, setMcpServers] = useState<any[]>([]);
   const [selectedMcpServers, setSelectedMcpServers] = useState<string[]>([]);
-  const [mcpTools, setMcpTools] = useState<Record<string, any[]>>({});
+  const [mcpServerConfigs, setMcpServerConfigs] = useState<Record<string, string[] | null>>({});
   const [loadingMcpServers, setLoadingMcpServers] = useState(false);
 
   // Fetch agent data if in edit mode
@@ -158,6 +160,27 @@ export function AgentBuilder() {
               if (agent.pii_config.custom_pii_categories) {
                 setCustomPII(agent.pii_config.custom_pii_categories);
               }
+            }
+            
+            // Load MCP server configurations
+            try {
+              const mcpResponse = await fetch(`http://localhost:8000/api/v1/agents/${editAgentId}/mcp-servers`);
+              if (mcpResponse.ok) {
+                const mcpData = await mcpResponse.json();
+                if (mcpData.mcp_servers && mcpData.mcp_servers.length > 0) {
+                  const serverIds = mcpData.mcp_servers.map((s: any) => s.server_id);
+                  setSelectedMcpServers(serverIds);
+                  
+                  // Build mcpServerConfigs from selected_tools
+                  const configs: Record<string, string[] | null> = {};
+                  mcpData.mcp_servers.forEach((s: any) => {
+                    configs[s.server_id] = s.selected_tools;
+                  });
+                  setMcpServerConfigs(configs);
+                }
+              }
+            } catch (error) {
+              console.error("Error fetching MCP server configurations:", error);
             }
           } else {
             toast({
@@ -241,7 +264,18 @@ export function AgentBuilder() {
     setLlmModel("");
     setProviderApiKey("");
     setIsUsingApiKey(false);
+    setModelSearch("");
   }, [llmProvider]);
+
+  useEffect(() => {
+    setModelSearch("");
+  }, [availableModels]);
+
+  const filteredModels = useMemo(() => {
+    if (!modelSearch.trim()) return availableModels;
+    const query = modelSearch.trim().toLowerCase();
+    return availableModels.filter((model) => model.toLowerCase().includes(query));
+  }, [availableModels, modelSearch]);
 
   // Fetch MCP servers
   useEffect(() => {
@@ -264,11 +298,33 @@ export function AgentBuilder() {
   };
 
   const handleMcpServerToggle = (serverId: string) => {
-    setSelectedMcpServers(prev => 
-      prev.includes(serverId)
-        ? prev.filter(id => id !== serverId)
-        : [...prev, serverId]
-    );
+    setSelectedMcpServers(prev => {
+      const isCurrentlySelected = prev.includes(serverId);
+      
+      if (isCurrentlySelected) {
+        // Remove server and its tool config
+        setMcpServerConfigs(configs => {
+          const newConfigs = { ...configs };
+          delete newConfigs[serverId];
+          return newConfigs;
+        });
+        return prev.filter(id => id !== serverId);
+      } else {
+        // Add server with "all tools" by default
+        setMcpServerConfigs(configs => ({
+          ...configs,
+          [serverId]: null // null = all tools
+        }));
+        return [...prev, serverId];
+      }
+    });
+  };
+
+  const handleMcpToolsChange = (serverId: string, selectedTools: string[] | null) => {
+    setMcpServerConfigs(prev => ({
+      ...prev,
+      [serverId]: selectedTools
+    }));
   };
 
   const handleDeleteMcpServer = async (serverId: string, serverName: string) => {
@@ -486,7 +542,12 @@ export function AgentBuilder() {
       human_in_loop: humanInLoop,
       recursion_limit: parseInt(recursionLimit),
       pii_config: pii_config,
-      mcp_servers: selectedMcpServers.length > 0 ? selectedMcpServers : null,
+      mcp_server_configs: selectedMcpServers.length > 0 
+        ? selectedMcpServers.map(serverId => ({
+            server_id: serverId,
+            selected_tools: mcpServerConfigs[serverId] || null
+          }))
+        : null,
       api_key: providerApiKey || ""  // Include API key if provided, empty string otherwise
     };
 
@@ -701,11 +762,29 @@ export function AgentBuilder() {
                     </SelectTrigger>
                     <SelectContent className="max-h-[300px]">
                       {availableModels.length > 0 ? (
-                        availableModels.map(model => (
-                          <SelectItem key={model} value={model}>
-                            {model}
-                          </SelectItem>
-                        ))
+                        <>
+                          <div className="px-2 pb-1">
+                            <Input
+                              type="text"
+                              placeholder="Search models..."
+                              value={modelSearch}
+                              onChange={(e) => setModelSearch(e.target.value)}
+                              onKeyDown={(e) => e.stopPropagation()}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          {filteredModels.length > 0 ? (
+                            filteredModels.map((model) => (
+                              <SelectItem key={model} value={model}>
+                                {model}
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="no-results" disabled>
+                              No models match "{modelSearch}"
+                            </SelectItem>
+                          )}
+                        </>
                       ) : (
                         <SelectItem value="loading" disabled>
                           {loadingModels ? "Fetching models..." : "Enter API key to fetch models"}
@@ -919,60 +998,60 @@ export function AgentBuilder() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="grid gap-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs text-muted-foreground">
+                      Select servers and choose which tools to enable
+                    </p>
+                    <MCPServerModal onServerAdded={fetchMcpServers} />
+                  </div>
+                  
+                  <div className="space-y-3">
                     {mcpServers.filter(s => s.status === 'active').map(server => (
-                      <div
-                        key={server.server_id}
-                        className="flex items-start space-x-3 p-3 rounded-md border border-border bg-background hover:bg-muted transition-colors"
-                      >
-                        <Checkbox
-                          id={server.server_id}
-                          checked={selectedMcpServers.includes(server.server_id)}
-                          onCheckedChange={() => handleMcpServerToggle(server.server_id)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        <div 
-                          className="flex-1 min-w-0 cursor-pointer"
-                          onClick={() => handleMcpServerToggle(server.server_id)}
-                        >
-                          <label htmlFor={server.server_id} className="text-sm font-medium cursor-pointer block">
-                            {server.name}
-                          </label>
-                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                            {server.description || 'No description'}
-                          </p>
-                          <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Wrench className="w-3 h-3" />
-                              {server.tools_count} tools
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <FileText className="w-3 h-3" />
-                              {server.resources_count} resources
-                            </span>
-                            {server.transport_type && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
-                                {server.transport_type.toUpperCase()}
-                              </span>
+                      <div key={server.server_id} className="border border-border rounded-lg overflow-hidden">
+                        {/* Server Header with Checkbox */}
+                        <div className="flex items-center gap-3 p-3 bg-muted/30">
+                          <Checkbox
+                            id={server.server_id}
+                            checked={selectedMcpServers.includes(server.server_id)}
+                            onCheckedChange={() => handleMcpServerToggle(server.server_id)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <label htmlFor={server.server_id} className="text-sm font-medium cursor-pointer block">
+                              {server.name}
+                            </label>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                              {server.description || 'No description'}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {selectedMcpServers.includes(server.server_id) && (
+                              <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
                             )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteMcpServer(server.server_id, server.name);
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {selectedMcpServers.includes(server.server_id) && (
-                            <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 flex-shrink-0" />
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteMcpServer(server.server_id, server.name);
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
+
+                        {/* Tool Selector (shown when server is selected) */}
+                        {selectedMcpServers.includes(server.server_id) && (
+                          <div className="border-t border-border">
+                            <MCPToolSelector
+                              serverId={server.server_id}
+                              serverName={server.name}
+                              initialSelectedTools={mcpServerConfigs[server.server_id]}
+                              onToolsChange={(tools) => handleMcpToolsChange(server.server_id, tools)}
+                            />
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

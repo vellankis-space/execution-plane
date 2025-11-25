@@ -283,29 +283,42 @@ export const MCPServerModal: React.FC<MCPServerModalProps> = ({ onServerAdded })
                   id="command"
                   value={formData.command}
                   onChange={(e) => setFormData({ ...formData, command: e.target.value })}
-                  placeholder="e.g., python, node, ./my-mcp-server"
+                  placeholder="e.g., bunx, npx, python, node, uvx"
                   required
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  The executable command to run the MCP server
+                </p>
               </div>
 
               <div>
                 <Label htmlFor="args">Arguments (JSON array)</Label>
-                <Input
+                <Textarea
                   id="args"
                   value={formData.args}
                   onChange={(e) => setFormData({ ...formData, args: e.target.value })}
-                  placeholder='["arg1", "arg2"]'
+                  placeholder='["-y", "@upstash/context7-mcp", "--api-key", "YOUR_API_KEY"]'
+                  rows={3}
+                  className="font-mono text-xs"
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Command-line arguments as a JSON array. Example: ["-y", "package-name", "--flag", "value"]
+                </p>
               </div>
 
               <div>
                 <Label htmlFor="env">Environment Variables (JSON object)</Label>
-                <Input
+                <Textarea
                   id="env"
                   value={formData.env}
                   onChange={(e) => setFormData({ ...formData, env: e.target.value })}
-                  placeholder='{"API_KEY": "value"}'
+                  placeholder='{"API_KEY": "your-api-key-here", "DEBUG": "true"}'
+                  rows={3}
+                  className="font-mono text-xs"
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Environment variables as a JSON object (optional)
+                </p>
               </div>
 
               <div>
