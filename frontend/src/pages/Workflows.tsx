@@ -22,14 +22,8 @@ export default function Workflows() {
               </div>
             </div>
             <div className="flex gap-3">
-              <Button variant="outline" size="sm" asChild className="shine-effect">
-                <Link to="/workflow-builder">
-                  <GitBranch className="w-4 h-4 mr-2" />
-                  Builder
-                </Link>
-              </Button>
               <Button size="sm" asChild className="shine-effect bg-gradient-to-r from-primary to-primary/90">
-                <Link to="/production-workflow">
+                <Link to="/workflow-builder">
                   <Plus className="w-4 h-4 mr-2" />
                   New Workflow
                 </Link>

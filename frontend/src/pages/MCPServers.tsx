@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Plus, 
-  Server, 
-  Trash2, 
-  Edit, 
-  Play, 
+import {
+  Plus,
+  Server,
+  Trash2,
+  Edit,
+  Play,
   StopCircle,
   CheckCircle,
   XCircle,
@@ -82,6 +82,9 @@ const MCPServers = () => {
   const [selectedServer, setSelectedServer] = useState<MCPServer | null>(null);
   const [serverTools, setServerTools] = useState<MCPTool[]>([]);
   const [showToolsModal, setShowToolsModal] = useState(false);
+  const [connectingServerId, setConnectingServerId] = useState<string | null>(null);
+  const [disconnectingServerId, setDisconnectingServerId] = useState<string | null>(null);
+  const [deletingServerId, setDeletingServerId] = useState<string | null>(null);
   const { toast } = useToast();
 
   // Form state
@@ -158,7 +161,7 @@ const MCPServers = () => {
       const url = editingServer
         ? `http://localhost:8000/api/v1/mcp-servers/${editingServer.server_id}`
         : 'http://localhost:8000/api/v1/mcp-servers';
-      
+
       const method = editingServer ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -189,6 +192,8 @@ const MCPServers = () => {
   };
 
   const handleConnect = async (server: MCPServer) => {
+    setConnectingServerId(server.server_id);
+
     try {
       const response = await fetch(
         `http://localhost:8000/api/v1/mcp-servers/${server.server_id}/connect`,
@@ -210,10 +215,14 @@ const MCPServers = () => {
         description: error.message,
         variant: 'destructive',
       });
+    } finally {
+      setConnectingServerId(null);
     }
   };
 
   const handleDisconnect = async (server: MCPServer) => {
+    setDisconnectingServerId(server.server_id);
+
     try {
       const response = await fetch(
         `http://localhost:8000/api/v1/mcp-servers/${server.server_id}/disconnect`,
@@ -233,6 +242,8 @@ const MCPServers = () => {
         description: error.message,
         variant: 'destructive',
       });
+    } finally {
+      setDisconnectingServerId(null);
     }
   };
 
@@ -240,6 +251,8 @@ const MCPServers = () => {
     if (!confirm(`Are you sure you want to delete "${server.name}"?`)) {
       return;
     }
+
+    setDeletingServerId(server.server_id);
 
     try {
       const response = await fetch(
@@ -260,6 +273,8 @@ const MCPServers = () => {
         description: 'Failed to delete server',
         variant: 'destructive',
       });
+    } finally {
+      setDeletingServerId(null);
     }
   };
 
@@ -376,157 +391,157 @@ const MCPServers = () => {
                     Add MCP Server
                   </Button>
                 </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingServer ? 'Edit MCP Server' : 'Add New MCP Server'}
-                </DialogTitle>
-                <DialogDescription>
-                  Configure a Model Context Protocol server to extend agent capabilities
-                </DialogDescription>
-              </DialogHeader>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>
+                      {editingServer ? 'Edit MCP Server' : 'Add New MCP Server'}
+                    </DialogTitle>
+                    <DialogDescription>
+                      Configure a Model Context Protocol server to extend agent capabilities
+                    </DialogDescription>
+                  </DialogHeader>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Label htmlFor="name">Server Name *</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="e.g., Weather API"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Describe what this server provides..."
-                    rows={2}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="transport">Transport Type *</Label>
-                  <Select
-                    value={formData.transport_type}
-                    onValueChange={(value) => setFormData({ ...formData, transport_type: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="http">HTTP</SelectItem>
-                      <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
-                      <SelectItem value="stdio">STDIO (Local Process)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {(formData.transport_type === 'http' || formData.transport_type === 'sse') && (
-                  <>
+                  <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                      <Label htmlFor="url">Server URL *</Label>
+                      <Label htmlFor="name">Server Name *</Label>
                       <Input
-                        id="url"
-                        value={formData.url}
-                        onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                        placeholder="https://api.example.com/mcp"
+                        id="name"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        placeholder="e.g., Weather API"
                         required
                       />
                     </div>
 
                     <div>
-                      <Label htmlFor="auth_token">API Key / Token (optional)</Label>
-                      <Input
-                        id="auth_token"
-                        type="password"
-                        value={formData.auth_token}
-                        onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
-                        placeholder="Enter authentication token"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {formData.transport_type === 'stdio' && (
-                  <>
-                    <div>
-                      <Label htmlFor="command">Command *</Label>
-                      <Input
-                        id="command"
-                        value={formData.command}
-                        onChange={(e) => setFormData({ ...formData, command: e.target.value })}
-                        placeholder="e.g., bunx, npx, python, node, uvx"
-                        required
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        The executable command to run the MCP server
-                      </p>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="args">Arguments (JSON array)</Label>
+                      <Label htmlFor="description">Description</Label>
                       <Textarea
-                        id="args"
-                        value={formData.args}
-                        onChange={(e) => setFormData({ ...formData, args: e.target.value })}
-                        placeholder='["-y", "@upstash/context7-mcp", "--api-key", "YOUR_API_KEY"]'
-                        rows={3}
-                        className="font-mono text-xs"
+                        id="description"
+                        value={formData.description}
+                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        placeholder="Describe what this server provides..."
+                        rows={2}
                       />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Command-line arguments as a JSON array. Example: ["-y", "package-name", "--flag", "value"]
-                      </p>
                     </div>
 
                     <div>
-                      <Label htmlFor="env">Environment Variables (JSON object)</Label>
-                      <Textarea
-                        id="env"
-                        value={formData.env}
-                        onChange={(e) => setFormData({ ...formData, env: e.target.value })}
-                        placeholder='{"API_KEY": "your-api-key-here", "DEBUG": "true"}'
-                        rows={3}
-                        className="font-mono text-xs"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Environment variables as a JSON object (optional)
-                      </p>
+                      <Label htmlFor="transport">Transport Type *</Label>
+                      <Select
+                        value={formData.transport_type}
+                        onValueChange={(value) => setFormData({ ...formData, transport_type: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="http">HTTP</SelectItem>
+                          <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
+                          <SelectItem value="stdio">STDIO (Local Process)</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
-                    <div>
-                      <Label htmlFor="cwd">Working Directory (optional)</Label>
-                      <Input
-                        id="cwd"
-                        value={formData.cwd}
-                        onChange={(e) => setFormData({ ...formData, cwd: e.target.value })}
-                        placeholder="/path/to/working/directory"
-                      />
-                    </div>
-                  </>
-                )}
+                    {(formData.transport_type === 'http' || formData.transport_type === 'sse') && (
+                      <>
+                        <div>
+                          <Label htmlFor="url">Server URL *</Label>
+                          <Input
+                            id="url"
+                            value={formData.url}
+                            onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                            placeholder="https://api.example.com/mcp"
+                            required
+                          />
+                        </div>
 
-                <div className="flex justify-end gap-2 pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setShowAddModal(false);
-                      resetForm();
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit">
-                    {editingServer ? 'Update Server' : 'Add Server'}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
+                        <div>
+                          <Label htmlFor="auth_token">API Key / Token (optional)</Label>
+                          <Input
+                            id="auth_token"
+                            type="password"
+                            value={formData.auth_token}
+                            onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
+                            placeholder="Enter authentication token"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {formData.transport_type === 'stdio' && (
+                      <>
+                        <div>
+                          <Label htmlFor="command">Command *</Label>
+                          <Input
+                            id="command"
+                            value={formData.command}
+                            onChange={(e) => setFormData({ ...formData, command: e.target.value })}
+                            placeholder="e.g., bunx, npx, python, node, uvx"
+                            required
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            The executable command to run the MCP server
+                          </p>
+                        </div>
+
+                        <div>
+                          <Label htmlFor="args">Arguments (JSON array)</Label>
+                          <Textarea
+                            id="args"
+                            value={formData.args}
+                            onChange={(e) => setFormData({ ...formData, args: e.target.value })}
+                            placeholder='["-y", "@upstash/context7-mcp", "--api-key", "YOUR_API_KEY"]'
+                            rows={3}
+                            className="font-mono text-xs"
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Command-line arguments as a JSON array. Example: ["-y", "package-name", "--flag", "value"]
+                          </p>
+                        </div>
+
+                        <div>
+                          <Label htmlFor="env">Environment Variables (JSON object)</Label>
+                          <Textarea
+                            id="env"
+                            value={formData.env}
+                            onChange={(e) => setFormData({ ...formData, env: e.target.value })}
+                            placeholder='{"API_KEY": "your-api-key-here", "DEBUG": "true"}'
+                            rows={3}
+                            className="font-mono text-xs"
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Environment variables as a JSON object (optional)
+                          </p>
+                        </div>
+
+                        <div>
+                          <Label htmlFor="cwd">Working Directory (optional)</Label>
+                          <Input
+                            id="cwd"
+                            value={formData.cwd}
+                            onChange={(e) => setFormData({ ...formData, cwd: e.target.value })}
+                            placeholder="/path/to/working/directory"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    <div className="flex justify-end gap-2 pt-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setShowAddModal(false);
+                          resetForm();
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit">
+                        {editingServer ? 'Update Server' : 'Add Server'}
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
               </Dialog>
             </div>
           </div>
@@ -535,179 +550,194 @@ const MCPServers = () => {
 
       {/* Content Section */}
       <div className="container mx-auto px-8 py-8">
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : servers.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center h-64">
-            <Server className="w-12 h-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No MCP Servers</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Get started by adding your first MCP server
-            </p>
-            <Button onClick={() => setShowAddModal(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add MCP Server
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {servers.map((server) => (
-            <Card key={server.server_id} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    {getTransportIcon(server.transport_type)}
-                    <CardTitle className="text-lg">{server.name}</CardTitle>
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : servers.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center h-64">
+              <Server className="w-12 h-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium mb-2">No MCP Servers</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Get started by adding your first MCP server
+              </p>
+              <Button onClick={() => setShowAddModal(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add MCP Server
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {servers.map((server) => (
+              <Card key={server.server_id} className="hover:shadow-lg transition-shadow">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      {getTransportIcon(server.transport_type)}
+                      <CardTitle className="text-lg">{server.name}</CardTitle>
+                    </div>
+                    {getStatusBadge(server.status)}
                   </div>
-                  {getStatusBadge(server.status)}
-                </div>
-                <CardDescription className="line-clamp-2">
-                  {server.description || 'No description'}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Transport:</span>
-                    <Badge variant="outline">{server.transport_type.toUpperCase()}</Badge>
-                  </div>
-
-                  {server.url && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Endpoint:</span>
-                      <span className="text-xs font-mono truncate max-w-[180px]">
-                        {server.url}
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t">
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-1 text-sm font-medium">
-                        <Wrench className="w-3 h-3" />
-                        {server.tools_count}
-                      </div>
-                      <div className="text-xs text-muted-foreground">Tools</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-1 text-sm font-medium">
-                        <FileText className="w-3 h-3" />
-                        {server.resources_count}
-                      </div>
-                      <div className="text-xs text-muted-foreground">Resources</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="flex items-center justify-center gap-1 text-sm font-medium">
-                        <Zap className="w-3 h-3" />
-                        {server.prompts_count}
-                      </div>
-                      <div className="text-xs text-muted-foreground">Prompts</div>
-                    </div>
-                  </div>
-
-                  {server.last_error && (
-                    <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded">
-                      {server.last_error}
-                    </div>
-                  )}
-
-                  <div className="flex gap-2 pt-2">
-                    {server.status === 'active' ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1"
-                        onClick={() => handleDisconnect(server)}
-                      >
-                        <StopCircle className="w-3 h-3 mr-1" />
-                        Disconnect
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="flex-1"
-                        onClick={() => handleConnect(server)}
-                      >
-                        <Play className="w-3 h-3 mr-1" />
-                        Connect
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleViewTools(server)}
-                      disabled={server.status !== 'active'}
-                    >
-                      <Wrench className="w-3 h-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleEdit(server)}
-                    >
-                      <Edit className="w-3 h-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleDelete(server)}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Tools Viewer Modal */}
-      <Dialog open={showToolsModal} onOpenChange={setShowToolsModal}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedServer?.name} - Available Tools
-            </DialogTitle>
-            <DialogDescription>
-              {serverTools.length} tool(s) discovered from this MCP server
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            {serverTools.map((tool, index) => (
-              <Card key={index}>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Wrench className="w-4 h-4" />
-                    {tool.name}
-                  </CardTitle>
-                  <CardDescription>{tool.description}</CardDescription>
+                  <CardDescription className="line-clamp-2">
+                    {server.description || 'No description'}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-sm">
-                    <span className="font-medium">Input Schema:</span>
-                    <pre className="mt-2 p-3 bg-muted rounded text-xs overflow-x-auto">
-                      {JSON.stringify(tool.inputSchema, null, 2)}
-                    </pre>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Transport:</span>
+                      <Badge variant="outline">{server.transport_type.toUpperCase()}</Badge>
+                    </div>
+
+                    {server.url && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Endpoint:</span>
+                        <span className="text-xs font-mono truncate max-w-[180px]">
+                          {server.url}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t">
+                      <div className="text-center">
+                        <div className="flex items-center justify-center gap-1 text-sm font-medium">
+                          <Wrench className="w-3 h-3" />
+                          {server.tools_count}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Tools</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="flex items-center justify-center gap-1 text-sm font-medium">
+                          <FileText className="w-3 h-3" />
+                          {server.resources_count}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Resources</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="flex items-center justify-center gap-1 text-sm font-medium">
+                          <Zap className="w-3 h-3" />
+                          {server.prompts_count}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Prompts</div>
+                      </div>
+                    </div>
+
+                    {server.last_error && (
+                      <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded">
+                        {server.last_error}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 pt-2">
+                      {server.status === 'active' ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => handleDisconnect(server)}
+                          disabled={disconnectingServerId === server.server_id}
+                        >
+                          {disconnectingServerId === server.server_id ? (
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          ) : (
+                            <StopCircle className="w-3 h-3 mr-1" />
+                          )}
+                          {disconnectingServerId === server.server_id ? 'Disconnecting...' : 'Disconnect'}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => handleConnect(server)}
+                          disabled={connectingServerId === server.server_id}
+                        >
+                          {connectingServerId === server.server_id ? (
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          ) : (
+                            <Play className="w-3 h-3 mr-1" />
+                          )}
+                          {connectingServerId === server.server_id ? 'Connecting...' : 'Connect'}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleViewTools(server)}
+                        disabled={server.status !== 'active'}
+                      >
+                        <Wrench className="w-3 h-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEdit(server)}
+                      >
+                        <Edit className="w-3 h-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDelete(server)}
+                        disabled={deletingServerId === server.server_id}
+                      >
+                        {deletingServerId === server.server_id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3 h-3" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             ))}
-
-            {serverTools.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                No tools available from this server
-              </div>
-            )}
           </div>
-        </DialogContent>
-      </Dialog>
+        )}
+
+        {/* Tools Viewer Modal */}
+        <Dialog open={showToolsModal} onOpenChange={setShowToolsModal}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedServer?.name} - Available Tools
+              </DialogTitle>
+              <DialogDescription>
+                {serverTools.length} tool(s) discovered from this MCP server
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              {serverTools.map((tool, index) => (
+                <Card key={index}>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Wrench className="w-4 h-4" />
+                      {tool.name}
+                    </CardTitle>
+                    <CardDescription>{tool.description}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-sm">
+                      <span className="font-medium">Input Schema:</span>
+                      <pre className="mt-2 p-3 bg-muted rounded text-xs overflow-x-auto">
+                        {JSON.stringify(tool.inputSchema, null, 2)}
+                      </pre>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+
+              {serverTools.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No tools available from this server
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

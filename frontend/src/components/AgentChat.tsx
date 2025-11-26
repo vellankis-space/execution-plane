@@ -6,11 +6,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Bot, User, Loader2, Trash2, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { ToolCallLog } from "@/components/ToolCallLog";
+
+interface ToolCall {
+  id: string;
+  name: string;
+  args: any;
+  result?: string;
+  duration?: number;
+  status: 'running' | 'complete' | 'error';
+}
 
 interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  toolCalls?: ToolCall[];
+  isStreaming?: boolean;
+  isThinking?: boolean;
 }
 
 interface Agent {
@@ -119,7 +132,7 @@ export function AgentChat() {
   useEffect(() => {
     sessionKeyRef.current = `${selectedAgentId}|${threadId}`;
     if (inFlightControllerRef.current) {
-      try { inFlightControllerRef.current.abort(); } catch {}
+      try { inFlightControllerRef.current.abort(); } catch { }
       inFlightControllerRef.current = null;
     }
   }, [selectedAgentId, threadId]);
@@ -185,62 +198,164 @@ export function AgentChat() {
   const handleSend = async () => {
     if (!input.trim() || !selectedAgentId) return;
 
-    const userMessage: Message = {
-      role: "user",
-      content: input,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    const messageToSend = input;  // Capture input before clearing
+    const messageToSend = input;
     setInput("");
     setIsLoading(true);
 
-    const requestSessionKey = sessionKeyRef.current;
-    const controller = new AbortController();
-    if (inFlightControllerRef.current) {
-      try { inFlightControllerRef.current.abort(); } catch {}
-    }
-    inFlightControllerRef.current = controller;
+    const userMessage: Message = {
+      role: "user",
+      content: messageToSend,
+      timestamp: new Date(),
+    };
+
+    // Initialize streaming assistant message
+    const streamingMessage: Message = {
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+      toolCalls: [],
+      isStreaming: true,
+      isThinking: false,
+    };
+
+    // Add both user message and streaming placeholder in one update
+    setMessages((prev) => [...prev, userMessage, streamingMessage]);
+
+    // Store the index of the streaming message to ensure we always update the same one
+    const streamingMessageIndexRef = { current: -1 };
 
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/agents/${selectedAgentId}/chat/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
+      // Connect to WebSocket
+      const ws = new WebSocket(`ws://localhost:8000/api/v1/agents/${selectedAgentId}/stream`);
+
+      ws.onopen = () => {
+        console.log("WebSocket connected");
+        // Send message to backend
+        ws.send(JSON.stringify({
           message: messageToSend,
           thread_id: threadId
-        }),
-        signal: controller.signal,
-      });
+        }));
+      };
 
-      if (response.ok) {
-        const data = await response.json();
-        if (requestSessionKey !== sessionKeyRef.current) return;
-        const assistantMessage: Message = {
-          role: "assistant",
-          content: data.response || "Response received",
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
-      } else {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(errorData.detail || 'Failed to get response');
-      }
-    } catch (error: any) {
-      if (error?.name !== 'AbortError') {
-        console.error("Error sending message:", error);
-        const errorMessage = error?.message || "Failed to send message. Make sure the backend is running.";
+      ws.onmessage = (event) => {
+        try {
+          const streamEvent = JSON.parse(event.data);
+
+          setMessages((prev) => {
+            const updated = [...prev];
+
+            // Find the streaming assistant message index (last assistant message)
+            let msgIndex = streamingMessageIndexRef.current;
+            if (msgIndex === -1) {
+              // First time - find the last assistant message
+              for (let i = updated.length - 1; i >= 0; i--) {
+                if (updated[i].role === "assistant") {
+                  msgIndex = i;
+                  streamingMessageIndexRef.current = i;
+                  break;
+                }
+              }
+            }
+
+            if (msgIndex === -1 || !updated[msgIndex] || updated[msgIndex].role !== "assistant") {
+              console.warn("⚠️ No assistant message found at index", msgIndex);
+              return prev;
+            }
+
+            const currentMsg = { ...updated[msgIndex] };
+
+            switch (streamEvent.type) {
+              case 'agent_thinking':
+                console.log(`[${msgIndex}] Setting thinking indicator`);
+                currentMsg.isThinking = true;
+                break;
+
+              case 'tool_call_start':
+                console.log(`[${msgIndex}] Adding tool call: ${streamEvent.tool_name}`);
+                const newToolCall: ToolCall = {
+                  id: streamEvent.tool_id,
+                  name: streamEvent.tool_name,
+                  args: streamEvent.arguments,
+                  status: 'running'
+                };
+                currentMsg.toolCalls = [...(currentMsg.toolCalls || []), newToolCall];
+                currentMsg.isThinking = false;
+                break;
+
+              case 'tool_call_end':
+                console.log(`[${msgIndex}] Tool call completed: ${streamEvent.tool_id}`);
+                console.log(`[${msgIndex}] Current tool calls:`, currentMsg.toolCalls);
+
+                // Create new array with updated tool - ensures React detects the change
+                currentMsg.toolCalls = (currentMsg.toolCalls || []).map(tc => {
+                  if (tc.id === streamEvent.tool_id) {
+                    console.log(`[${msgIndex}] ✅ Updating tool ${tc.name} status: running → complete`);
+                    // Create new object to ensure React detects change
+                    return {
+                      ...tc,
+                      result: streamEvent.result,
+                      duration: streamEvent.duration_ms,
+                      status: 'complete' as const
+                    };
+                  }
+                  return tc;
+                });
+                console.log(`[${msgIndex}] Updated tool calls:`, currentMsg.toolCalls);
+                break;
+
+              case 'llm_token':
+                console.log(`[${msgIndex}] Adding content token (total: ${currentMsg.content.length + (streamEvent.content || '').length} chars)`);
+                currentMsg.content += streamEvent.content || '';
+                currentMsg.isThinking = false;
+                break;
+
+              case 'agent_complete':
+                console.log(`[${msgIndex}] Agent complete - tool calls: ${currentMsg.toolCalls?.length || 0}, content: ${currentMsg.content.length} chars`);
+                currentMsg.isStreaming = false;
+                currentMsg.isThinking = false;
+                break;
+
+              case 'error':
+                console.log(`[${msgIndex}] Error received`);
+                currentMsg.content = `Error: ${streamEvent.error}`;
+                currentMsg.isStreaming = false;
+                currentMsg.isThinking = false;
+                break;
+            }
+
+            updated[msgIndex] = currentMsg;
+            return updated;
+          });
+        } catch (error) {
+          console.error("Error parsing stream event:", error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error("WebSocket error:", error);
         toast({
-          title: "Error",
-          description: errorMessage,
+          title: "Connection Error",
+          description: "Failed to connect to agent stream",
           variant: "destructive",
         });
-      }
-    } finally {
-      if (requestSessionKey === sessionKeyRef.current) setIsLoading(false);
+        setIsLoading(false);
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket closed");
+        setIsLoading(false);
+      };
+
+    } catch (error: any) {
+      console.error("Error sending message:", error);
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to send message",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      // Remove the streaming placeholder on error
+      setMessages((prev) => prev.slice(0, -1));
     }
   };
 
@@ -280,7 +395,7 @@ export function AgentChat() {
                     <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                   </Button>
                 </div>
-                
+
                 {agents.length === 0 ? (
                   <div className="text-center py-8">
                     <Bot className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -291,13 +406,12 @@ export function AgentChat() {
                 ) : (
                   <div className="space-y-3 max-h-[500px] overflow-y-auto">
                     {agents.map((agent) => (
-                      <div 
+                      <div
                         key={agent.agent_id}
-                        className={`p-4 rounded-lg border cursor-pointer transition-all ${
-                          selectedAgentId === agent.agent_id
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:bg-muted/50"
-                        }`}
+                        className={`p-4 rounded-lg border cursor-pointer transition-all ${selectedAgentId === agent.agent_id
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-muted/50"
+                          }`}
                         onClick={() => setSelectedAgentId(agent.agent_id)}
                       >
                         <div className="flex items-start justify-between">
@@ -385,26 +499,42 @@ export function AgentChat() {
                       {messages.map((message, index) => (
                         <div
                           key={index}
-                          className={`flex gap-3 ${
-                            message.role === "user" ? "justify-end" : "justify-start"
-                          }`}
+                          className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"
+                            }`}
                         >
                           {message.role === "assistant" && (
                             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
                               <Bot className="w-4 h-4 text-primary-foreground" />
                             </div>
                           )}
-                          <div
-                            className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                              message.role === "user"
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted text-foreground"
-                            }`}
-                          >
-                            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                            <p className="text-xs opacity-70 mt-1">
-                              {message.timestamp.toLocaleTimeString()}
-                            </p>
+                          <div className={`max-w-[80%] space-y-2 ${message.role === "user" ? "flex flex-col items-end" : ""}`}>
+                            {/* Tool Call Log */}
+                            {(message.toolCalls || message.isThinking) && (
+                              <ToolCallLog
+                                toolCalls={message.toolCalls || []}
+                                isThinking={message.isThinking}
+                              />
+                            )}
+
+                            {/* Message Content */}
+                            {(message.content || message.role === "user") && (
+                              <div
+                                className={`rounded-lg px-4 py-2 ${message.role === "user"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted text-foreground"
+                                  }`}
+                              >
+                                <p className="text-sm whitespace-pre-wrap">
+                                  {message.content}
+                                  {message.isStreaming && (
+                                    <span className="inline-block w-1.5 h-4 bg-current animate-pulse ml-1 align-middle"></span>
+                                  )}
+                                </p>
+                                <p className="text-xs opacity-70 mt-1">
+                                  {message.timestamp.toLocaleTimeString()}
+                                </p>
+                              </div>
+                            )}
                           </div>
                           {message.role === "user" && (
                             <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center flex-shrink-0">
@@ -413,16 +543,6 @@ export function AgentChat() {
                           )}
                         </div>
                       ))}
-                      {isLoading && (
-                        <div className="flex gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                            <Bot className="w-4 h-4 text-primary-foreground" />
-                          </div>
-                          <div className="bg-muted rounded-lg px-4 py-2">
-                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
                 </ScrollArea>

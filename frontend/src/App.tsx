@@ -16,38 +16,31 @@ import MCPServers from "./pages/MCPServers";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import { AgentBuilder } from "./components/AgentBuilder";
-import { NoCodeWorkflowBuilder, ProductionWorkflowBuilder } from "./components/workflow";
+import { WorkflowBuilder } from "./components/workflow/WorkflowBuilder";
 
 const queryClient = new QueryClient();
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
+  if (loading) {
+    return <div>Loading...</div>;
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+  if (!user) {
+    return <Navigate to="/login" />;
   }
 
-  return <MainLayout>{children}</MainLayout>;
-}
+  return <>{children}</>;
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="app-theme">
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <TooltipProvider>
+        <Toaster />
+        <Sonner />
         <AuthProvider>
-          <Toaster />
-          <Sonner />
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<Login />} />
@@ -55,7 +48,9 @@ const App = () => (
                 path="/"
                 element={
                   <ProtectedRoute>
-                    <Index />
+                    <MainLayout>
+                      <Index />
+                    </MainLayout>
                   </ProtectedRoute>
                 }
               />
@@ -63,7 +58,9 @@ const App = () => (
                 path="/chat"
                 element={
                   <ProtectedRoute>
-                    <Chat />
+                    <MainLayout>
+                      <Chat />
+                    </MainLayout>
                   </ProtectedRoute>
                 }
               />
@@ -71,7 +68,9 @@ const App = () => (
                 path="/agents"
                 element={
                   <ProtectedRoute>
-                    <Agents />
+                    <MainLayout>
+                      <Agents />
+                    </MainLayout>
                   </ProtectedRoute>
                 }
               />
@@ -79,7 +78,9 @@ const App = () => (
                 path="/workflows"
                 element={
                   <ProtectedRoute>
-                    <Workflows />
+                    <MainLayout>
+                      <Workflows />
+                    </MainLayout>
                   </ProtectedRoute>
                 }
               />
@@ -87,7 +88,9 @@ const App = () => (
                 path="/monitoring"
                 element={
                   <ProtectedRoute>
-                    <Monitoring />
+                    <MainLayout>
+                      <Monitoring />
+                    </MainLayout>
                   </ProtectedRoute>
                 }
               />
@@ -95,7 +98,9 @@ const App = () => (
                 path="/audit"
                 element={
                   <ProtectedRoute>
-                    <Audit />
+                    <MainLayout>
+                      <Audit />
+                    </MainLayout>
                   </ProtectedRoute>
                 }
               />
@@ -103,7 +108,9 @@ const App = () => (
                 path="/mcp-servers"
                 element={
                   <ProtectedRoute>
-                    <MCPServers />
+                    <MainLayout>
+                      <MCPServers />
+                    </MainLayout>
                   </ProtectedRoute>
                 }
               />
@@ -119,19 +126,16 @@ const App = () => (
                 path="/workflow-builder"
                 element={
                   <ProtectedRoute>
-                    <NoCodeWorkflowBuilder />
+                    <WorkflowBuilder />
                   </ProtectedRoute>
                 }
               />
               <Route
                 path="/production-workflow"
                 element={
-                  <ProtectedRoute>
-                    <ProductionWorkflowBuilder />
-                  </ProtectedRoute>
+                  <Navigate to="/workflow-builder" replace />
                 }
               />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

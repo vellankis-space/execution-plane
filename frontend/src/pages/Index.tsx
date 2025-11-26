@@ -1,13 +1,35 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Brain, Network, Plus, ArrowRight, Activity, Sparkles, Zap, TrendingUp } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AgentList } from "@/components/AgentList";
 import { WorkflowList } from "@/components/workflow/WorkflowList";
+import { DashboardService, DashboardStats } from "@/services/dashboardService";
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<"agents" | "workflows">("agents");
+  const [stats, setStats] = useState<DashboardStats>({
+    total_agents: 0,
+    active_workflows: 0,
+    executions_today: 0
+  });
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const data = await DashboardService.getStats();
+        setStats(data);
+      } catch (error) {
+        console.error("Failed to fetch dashboard stats:", error);
+      }
+    };
+
+    fetchStats();
+    // Poll every 10 seconds
+    const interval = setInterval(fetchStats, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -54,11 +76,11 @@ export default function Index() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Total Agents</p>
                   <p className="text-3xl font-bold mt-2 bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
-                    12
+                    {stats.total_agents}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                     <TrendingUp className="w-3 h-3 text-green-500" />
-                    <span className="text-green-500">+3</span> this week
+                    <span className="text-green-500">Real-time</span>
                   </p>
                 </div>
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/20 flex items-center justify-center">
@@ -75,11 +97,11 @@ export default function Index() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Active Workflows</p>
                   <p className="text-3xl font-bold mt-2 bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
-                    8
+                    {stats.active_workflows}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                     <TrendingUp className="w-3 h-3 text-green-500" />
-                    <span className="text-green-500">+2</span> this week
+                    <span className="text-green-500">Real-time</span>
                   </p>
                 </div>
                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 flex items-center justify-center">
@@ -96,7 +118,7 @@ export default function Index() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Executions Today</p>
                   <p className="text-3xl font-bold mt-2 bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
-                    156
+                    {stats.executions_today}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                     <Zap className="w-3 h-3 text-amber-500" />

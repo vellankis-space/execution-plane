@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from . import agents, knowledge_base, workflows, monitoring, enhanced_monitoring, versioning, alerting, cost_tracking, auth, scheduling, audit, queue, templates, human_in_loop, a2a, mcp, credentials, webhooks, models, mcp_servers
+from . import agents, knowledge_base, workflows, monitoring, enhanced_monitoring, versioning, alerting, cost_tracking, auth, scheduling, audit, queue, templates, human_in_loop, a2a, mcp, credentials, webhooks, models, mcp_servers, dashboard
 
 router = APIRouter()
 router.include_router(auth.router, prefix="/auth", tags=["authentication"])
@@ -22,3 +22,4 @@ router.include_router(templates.router, prefix="/templates", tags=["templates"])
 router.include_router(human_in_loop.router, prefix="/human-in-loop", tags=["human-in-loop"])
 router.include_router(a2a.router, prefix="/a2a", tags=["a2a"])
 router.include_router(mcp.router, prefix="/mcp", tags=["mcp"])
+router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])

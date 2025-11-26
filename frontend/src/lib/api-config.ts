@@ -9,18 +9,18 @@ const getApiUrl = (): string => {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
-  
+
   // In development, detect from window location
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
     const protocol = window.location.protocol;
-    
+
     // If running in Docker or production, use same host
     if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
       return `${protocol}//${hostname}:8000`;
     }
   }
-  
+
   // Default to localhost for local development
   return 'http://localhost:8000';
 };
@@ -30,11 +30,11 @@ const getWebSocketUrl = (path: string): string => {
   const apiUrl = getApiUrl();
   const wsProtocol = apiUrl.startsWith('https') ? 'wss' : 'ws';
   const host = apiUrl.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
-  
+
   // Extract port from API URL or use default
   const portMatch = apiUrl.match(/:(\d+)/);
   const port = portMatch ? portMatch[1] : '8000';
-  
+
   return `${wsProtocol}://${host}:${port}${path}`;
 };
 
@@ -55,7 +55,7 @@ export const API_ENDPOINTS = {
     LOGOUT: `${API_V1_URL}/auth/logout`,
     ME: `${API_V1_URL}/auth/me`,
   },
-  
+
   // Agents
   AGENTS: {
     LIST: `${API_V1_URL}/agents`,
@@ -70,7 +70,7 @@ export const API_ENDPOINTS = {
       SESSION: (sessionId: string) => `${API_V1_URL}/agents/memory/session/${sessionId}`,
     },
   },
-  
+
   // Workflows
   WORKFLOWS: {
     LIST: `${API_V1_URL}/workflows`,
@@ -81,7 +81,7 @@ export const API_ENDPOINTS = {
     EXECUTE: (id: string) => `${API_V1_URL}/workflows/${id}/execute`,
     EXECUTION: (executionId: string) => `${API_V1_URL}/workflow-executions/${executionId}`,
   },
-  
+
   // Monitoring
   MONITORING: {
     HEALTH: `${API_V1_URL}/monitoring/health`,
@@ -91,7 +91,7 @@ export const API_ENDPOINTS = {
       STEP_EXECUTIONS: `${API_V1_URL}/monitoring/metrics/step-executions`,
     },
   },
-  
+
   // Enhanced Monitoring
   ENHANCED_MONITORING: {
     WORKFLOW_METRICS: `${API_V1_URL}/enhanced-monitoring/enhanced-metrics/workflow-executions`,
@@ -99,7 +99,7 @@ export const API_ENDPOINTS = {
     BOTTLENECKS: (workflowId: string) => `${API_V1_URL}/enhanced-monitoring/analytics/bottlenecks/${workflowId}`,
     RESOURCE_TRENDS: (workflowId: string) => `${API_V1_URL}/enhanced-monitoring/analytics/resource-trends/${workflowId}`,
   },
-  
+
   // Alerting
   ALERTING: {
     RULES: `${API_V1_URL}/alerting/rules`,
@@ -109,7 +109,7 @@ export const API_ENDPOINTS = {
     ACKNOWLEDGE: (id: string) => `${API_V1_URL}/alerting/alerts/${id}/acknowledge`,
     RESOLVE: (id: string) => `${API_V1_URL}/alerting/alerts/${id}/resolve`,
   },
-  
+
   // Cost Tracking
   COST_TRACKING: {
     SUMMARY: `${API_V1_URL}/cost-tracking/summary`,
@@ -119,14 +119,14 @@ export const API_ENDPOINTS = {
     BUDGET_STATUS: (id: string) => `${API_V1_URL}/cost-tracking/budgets/${id}/status`,
     ALERTS: `${API_V1_URL}/cost-tracking/alerts`,
   },
-  
+
   // Audit
   AUDIT: {
     LOGS: `${API_V1_URL}/audit/logs`,
     SEARCH: `${API_V1_URL}/audit/search`,
     SUMMARY: `${API_V1_URL}/audit/summary`,
   },
-  
+
   // Knowledge Bases
   KNOWLEDGE_BASES: {
     LIST: `${API_V1_URL}/knowledge-bases`,
@@ -137,6 +137,11 @@ export const API_ENDPOINTS = {
       URL: (id: string) => `${API_V1_URL}/knowledge-bases/${id}/documents/url`,
       FILE: (id: string) => `${API_V1_URL}/knowledge-bases/${id}/documents/file`,
     },
+  },
+
+  // Dashboard
+  DASHBOARD: {
+    STATS: `${API_V1_URL}/dashboard/stats`,
   },
 };
 

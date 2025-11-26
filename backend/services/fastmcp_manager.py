@@ -85,6 +85,31 @@ class FastMCPManager:
         self._failure_counts: Dict[Tuple[str, str], int] = {}
         self._circuit_breaker_threshold = 3  # Open circuit after 3 consecutive failures
     
+    def _validate_auth_config(self, config: MCPServerConfig) -> None:
+        """
+        Validate authentication configuration and warn about potential issues.
+        
+        Args:
+            config: MCP server configuration to validate
+        """
+        if config.transport_type in ("http", "sse"):
+            has_auth_token = bool(config.auth_token and config.auth_token.strip())
+            has_auth_header = False
+            
+            if config.headers:
+                has_auth_header = any(k.lower() == 'authorization' for k in config.headers.keys())
+            
+            if not has_auth_token and not has_auth_header:
+                logger.warning(
+                    f"⚠️  Server '{config.name}' ({config.server_id}) has no authentication configured. "
+                    f"If the remote MCP server requires authentication, connection will fail."
+                )
+            elif has_auth_token and len(config.auth_token.strip()) < 10:
+                logger.warning(
+                    f"⚠️  Server '{config.name}' ({config.server_id}) has a suspiciously short API key "
+                    f"({len(config.auth_token.strip())} characters). Please verify it's correct."
+                )
+    
     async def register_server(self, config: MCPServerConfig) -> bool:
         """
         Register an MCP server configuration.
@@ -96,6 +121,9 @@ class FastMCPManager:
             True if successfully registered
         """
         async with self._lock:
+            # Validate authentication configuration
+            self._validate_auth_config(config)
+            
             self.servers[config.server_id] = config
             logger.info(f"Registered MCP server: {config.server_id} ({config.name})")
             return True
@@ -249,11 +277,38 @@ class FastMCPManager:
         Returns:
             FastMCP Client instance (not yet connected)
         """
-        # Build auth parameter for remote transports. FastMCP's Client will
-        # infer the correct HTTP vs SSE transport automatically from the URL.
+        # Build auth parameter for remote transports
+        # Support multiple authentication methods:
+        # 1. auth_token with auth_type="bearer" 
+        # 2. Authorization header in headers dict
+        # 3. auth_token alone (will be treated as bearer)
         auth = None
+        headers = config.headers or {}
+        
+        # Debug logging to trace auth configuration
+        logger.info(f"Creating client for {config.server_id}:")
+        logger.info(f"  - transport_type: {config.transport_type}")
+        logger.info(f"  - auth_type: {config.auth_type}")
+        logger.info(f"  - auth_token present: {bool(config.auth_token)}")
+        logger.info(f"  - auth_token length: {len(config.auth_token) if config.auth_token else 0}")
+        logger.info(f"  - headers keys: {list(headers.keys())}")
+        
+        # Check if Authorization header already exists in headers
+        has_auth_header = any(k.lower() == 'authorization' for k in headers.keys()) if headers else False
+        
         if config.auth_type == "bearer" and config.auth_token:
+            # Explicit bearer token configuration
             auth = config.auth_token
+            logger.info(f"✓ Using bearer token authentication for {config.server_id} (explicit auth_type)")
+        elif config.auth_token and not has_auth_header:
+            # auth_token provided without auth_type - assume bearer
+            auth = config.auth_token
+            logger.info(f"✓ Using token authentication (assuming bearer) for {config.server_id}")
+        elif has_auth_header:
+            # Authorization header already in headers - no need for separate auth
+            logger.info(f"✓ Using Authorization header from headers dict for {config.server_id}")
+        else:
+            logger.info(f"⚠️  No authentication configured for {config.server_id}")
         
         # Remote HTTP/SSE transports
         if config.transport_type in ("http", "sse"):
@@ -267,7 +322,7 @@ class FastMCPManager:
             if config.transport_type == "sse":
                 transport = SSETransport(
                     url=config.url,
-                    headers=config.headers,
+                    headers=headers,
                     auth=auth,
                     sse_read_timeout=TOOL_EXECUTION_TIMEOUT
                 )
@@ -277,7 +332,7 @@ class FastMCPManager:
                 # Since we have explicit types in config, we honor them.
                 transport = StreamableHttpTransport(
                     url=config.url,
-                    headers=config.headers,
+                    headers=headers,
                     auth=auth
                 )
                 

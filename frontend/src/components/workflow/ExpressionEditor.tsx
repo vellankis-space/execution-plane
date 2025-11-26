@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { safeEvaluator } from "./SafeExpressionEvaluator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -282,7 +282,7 @@ export function ExpressionEditor({
                     Pro Tip
                   </h4>
                   <p className="text-xs text-blue-800 dark:text-blue-200 mt-1">
-                    You can chain multiple operations: 
+                    You can chain multiple operations:
                     <code className="bg-blue-100 dark:bg-blue-900 px-1 py-0.5 rounded mx-1">
                       {"{{ $json.name.toUpperCase().substring(0, 3) }}"}
                     </code>
@@ -313,8 +313,13 @@ export function ParameterMapper({
   onChange: (params: Record<string, string>) => void;
 }) {
   const [params, setParams] = useState<Array<{ key: string; value: string }>>(
-    Object.entries(parameters).map(([key, value]) => ({ key, value }))
+    Object.entries(parameters || {}).map(([key, value]) => ({ key, value }))
   );
+
+  // Sync with prop changes
+  useEffect(() => {
+    setParams(Object.entries(parameters || {}).map(([key, value]) => ({ key, value })));
+  }, [parameters]);
 
   const addParameter = () => {
     setParams([...params, { key: "", value: "" }]);
@@ -342,37 +347,53 @@ export function ParameterMapper({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <Label>Parameters</Label>
+        <div>
+          <Label>Parameters</Label>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Define key-value pairs to pass to this node
+          </p>
+        </div>
         <Button variant="outline" size="sm" onClick={addParameter}>
           <Plus className="w-4 h-4 mr-1" />
           Add
         </Button>
       </div>
-      {params.map((param, index) => (
-        <div key={index} className="flex gap-2">
-          <Input
-            placeholder="Key"
-            value={param.key}
-            onChange={(e) => updateParameter(index, "key", e.target.value)}
-            className="flex-1"
-          />
-          <Input
-            placeholder="Value or expression"
-            value={param.value}
-            onChange={(e) => updateParameter(index, "value", e.target.value)}
-            className="flex-1"
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => removeParameter(index)}
-          >
-            <X className="w-4 h-4" />
-          </Button>
+
+      {params.length === 0 ? (
+        <div className="text-center py-8 border border-dashed rounded-lg">
+          <p className="text-sm text-muted-foreground">No parameters defined</p>
+          <p className="text-xs text-muted-foreground mt-1">Click "Add" to create a parameter</p>
         </div>
-      ))}
+      ) : (
+        <div className="space-y-2">
+          {params.map((param, index) => (
+            <div key={index} className="flex gap-2">
+              <Input
+                placeholder="Key (e.g., user_id)"
+                value={param.key}
+                onChange={(e) => updateParameter(index, "key", e.target.value)}
+                className="flex-1 font-mono text-sm"
+              />
+              <Input
+                placeholder="Value or {{ expression }}"
+                value={param.value}
+                onChange={(e) => updateParameter(index, "value", e.target.value)}
+                className="flex-1 font-mono text-sm"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => removeParameter(index)}
+                className="shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

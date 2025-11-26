@@ -80,6 +80,14 @@ async def create_mcp_server(
         # Generate unique server ID
         server_id = f"mcp_{uuid.uuid4().hex[:12]}"
         
+        # Debug logging for auth configuration
+        logger.info(f"Creating MCP server '{server_data.name}':")
+        logger.info(f"  - transport_type: {server_data.transport_type}")
+        logger.info(f"  - auth_type: {server_data.auth_type}")
+        logger.info(f"  - auth_token present: {bool(server_data.auth_token)}")
+        logger.info(f"  - auth_token length: {len(server_data.auth_token) if server_data.auth_token else 0}")
+        logger.info(f"  - headers: {server_data.headers}")
+        
         # Create database record
         db_server = MCPServer(
             server_id=server_id,
@@ -263,7 +271,34 @@ async def update_mcp_server(
             cwd=server.cwd
         )
         
+        # Register updated configuration
         await fastmcp_manager.register_server(config)
+        
+        # If server was active, reconnect with new credentials
+        if server.status == "active":
+            logger.info(f"Reconnecting MCP server {server_id} with updated credentials...")
+            # Disconnect first to clear old connection
+            await fastmcp_manager.disconnect_server(server_id)
+            # Reconnect with new config
+            success = await fastmcp_manager.connect_server(server_id)
+            if success:
+                # Update database status
+                status_info = await fastmcp_manager.get_server_status(server_id)
+                server.status = "active"
+                server.last_connected = datetime.now(timezone.utc)
+                server.last_error = None
+                server.tools_count = status_info.get("tools_count", 0)
+                server.resources_count = status_info.get("resources_count", 0)
+                server.prompts_count = status_info.get("prompts_count", 0)
+                db.commit()
+                logger.info(f"✅ Successfully reconnected MCP server {server_id}")
+            else:
+                # Connection failed with new credentials
+                status_info = await fastmcp_manager.get_server_status(server_id)
+                server.status = "error"
+                server.last_error = status_info.get("last_error", "Reconnection failed")
+                db.commit()
+                logger.warning(f"⚠️ Failed to reconnect MCP server {server_id} after update")
         
         logger.info(f"Updated MCP server: {server_id}")
         
@@ -335,6 +370,15 @@ async def connect_mcp_server(
         # Ensure the server is registered with FastMCP manager before connecting.
         # This is important after backend restarts where the in-memory FastMCP
         # manager state is empty but the database still has MCP server records.
+        
+        # Debug logging for auth retrieval from database
+        logger.info(f"Connecting MCP server '{server.name}' (ID: {server.server_id}):")
+        logger.info(f"  - transport_type from DB: {server.transport_type}")
+        logger.info(f"  - auth_type from DB: {server.auth_type}")
+        logger.info(f"  - auth_token from DB present: {bool(server.auth_token)}")
+        logger.info(f"  - auth_token from DB length: {len(server.auth_token) if server.auth_token else 0}")
+        logger.info(f"  - headers from DB: {server.headers}")
+        
         config = MCPServerConfig(
             server_id=server.server_id,
             name=server.name,
@@ -467,20 +511,39 @@ async def get_mcp_server_tools(server_id: str, db: Session = Depends(get_db)):
 
         # Ensure server is registered with FastMCP manager (handles backend restarts)
         if server_id not in fastmcp_manager.servers:
+            logger.info(f"Server {server_id} not in FastMCP manager, re-registering...")
+            
             headers = server.headers
             if isinstance(headers, str) and headers:
-                headers = json.loads(headers)
+                try:
+                    headers = json.loads(headers)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse headers JSON for server {server_id}, using empty dict")
+                    headers = {}
             headers = headers or {}
 
             args = server.args
             if isinstance(args, str) and args:
-                args = json.loads(args)
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse args JSON for server {server_id}, using empty list")
+                    args = []
             args = args or []
 
             env = server.env
             if isinstance(env, str) and env:
-                env = json.loads(env)
+                try:
+                    env = json.loads(env)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse env JSON for server {server_id}, using empty dict")
+                    env = {}
             env = env or {}
+            
+            # Debug logging for re-registration
+            logger.info(f"Re-registering server {server_id} with:")
+            logger.info(f"  - auth_type: {server.auth_type}")
+            logger.info(f"  - auth_token present: {bool(server.auth_token)}")
 
             config = MCPServerConfig(
                 server_id=server.server_id,
@@ -498,6 +561,7 @@ async def get_mcp_server_tools(server_id: str, db: Session = Depends(get_db)):
                 status=server.status
             )
             await fastmcp_manager.register_server(config)
+            logger.info(f"✓ Server {server_id} re-registered successfully")
 
         # Attempt to connect/discover tools if not cached yet
         tools = await fastmcp_manager.get_tools(server_id)

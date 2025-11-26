@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime
+import json
 
 from schemas.agent import AgentCreate, AgentInDB, AgentExecutionRequest, AgentExecutionResponse, AgentChatRequest
 from services.agent_service import AgentService

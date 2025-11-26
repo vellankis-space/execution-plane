@@ -84,7 +84,7 @@ export function WorkflowTriggers({
 
   const handleDeleteTrigger = (id: string) => {
     if (!confirm("Are you sure you want to delete this trigger?")) return;
-    
+
     const newTriggers = triggers.filter((t) => t.id !== id);
     onTriggersChange(newTriggers);
     toast({ title: "Success", description: "Trigger deleted" });
@@ -139,181 +139,173 @@ export function WorkflowTriggers({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Workflow Triggers</h3>
-          <p className="text-sm text-muted-foreground">
-            Configure how and when your workflow runs
-          </p>
-        </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={resetForm}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Trigger
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px]">
-            <DialogHeader>
-              <DialogTitle>
-                {editingTrigger ? "Edit" : "Add"} Trigger
-              </DialogTitle>
-              <DialogDescription>
-                Configure when and how this workflow should execute
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <div>
-                <Label>Trigger Name</Label>
-                <Input
-                  value={triggerName}
-                  onChange={(e) => setTriggerName(e.target.value)}
-                  placeholder="e.g., On New Order"
-                  className="mt-1"
-                />
-              </div>
-
-              <div>
-                <Label>Trigger Type</Label>
-                <Select value={triggerType} onValueChange={(v: any) => setTriggerType(v)}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="webhook">Webhook</SelectItem>
-                    <SelectItem value="schedule">Schedule</SelectItem>
-                    <SelectItem value="manual">Manual</SelectItem>
-                    <SelectItem value="event">Event</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Webhook Configuration */}
-              {triggerType === "webhook" && (
-                <Card className="p-4 bg-muted/50">
-                  <div className="flex items-start gap-2">
-                    <Webhook className="w-5 h-5 text-primary mt-0.5" />
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-sm">Webhook Configuration</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Workflow will trigger when a POST request is sent to the webhook URL
-                      </p>
-                      <div className="mt-3">
-                        <Label className="text-xs">HTTP Method</Label>
-                        <Select
-                          value={triggerConfig.method || "POST"}
-                          onValueChange={(v) =>
-                            setTriggerConfig({ ...triggerConfig, method: v })
-                          }
-                        >
-                          <SelectTrigger className="mt-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="POST">POST</SelectItem>
-                            <SelectItem value="GET">GET</SelectItem>
-                            <SelectItem value="PUT">PUT</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="mt-3">
-                        <Label className="text-xs">Authentication</Label>
-                        <Select
-                          value={triggerConfig.auth || "none"}
-                          onValueChange={(v) =>
-                            setTriggerConfig({ ...triggerConfig, auth: v })
-                          }
-                        >
-                          <SelectTrigger className="mt-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            <SelectItem value="api_key">API Key</SelectItem>
-                            <SelectItem value="bearer">Bearer Token</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              )}
-
-              {/* Schedule Configuration */}
-              {triggerType === "schedule" && (
-                <Card className="p-4 bg-muted/50">
-                  <div className="flex items-start gap-2">
-                    <Clock className="w-5 h-5 text-primary mt-0.5" />
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-sm">Schedule Configuration</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Run workflow on a recurring schedule
-                      </p>
-                      <div className="mt-3">
-                        <Label className="text-xs">Cron Expression</Label>
-                        <Input
-                          value={triggerConfig.cron || ""}
-                          onChange={(e) =>
-                            setTriggerConfig({ ...triggerConfig, cron: e.target.value })
-                          }
-                          placeholder="0 0 * * *"
-                          className="mt-1 font-mono text-sm"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Example: "0 0 * * *" runs daily at midnight
-                        </p>
-                      </div>
-                      <div className="mt-3">
-                        <Label className="text-xs">Timezone</Label>
-                        <Select
-                          value={triggerConfig.timezone || "UTC"}
-                          onValueChange={(v) =>
-                            setTriggerConfig({ ...triggerConfig, timezone: v })
-                          }
-                        >
-                          <SelectTrigger className="mt-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="UTC">UTC</SelectItem>
-                            <SelectItem value="America/New_York">Eastern</SelectItem>
-                            <SelectItem value="America/Los_Angeles">Pacific</SelectItem>
-                            <SelectItem value="Europe/London">London</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              )}
-
-              {/* Manual Configuration */}
-              {triggerType === "manual" && (
-                <Card className="p-4 bg-muted/50">
-                  <div className="flex items-start gap-2">
-                    <Play className="w-5 h-5 text-primary mt-0.5" />
-                    <div>
-                      <h4 className="font-semibold text-sm">Manual Trigger</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Workflow runs only when manually triggered from the UI
-                      </p>
-                    </div>
-                  </div>
-                </Card>
-              )}
-
-              <div className="flex justify-end gap-2 pt-4 border-t">
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveTrigger}>
-                  {editingTrigger ? "Update" : "Create"} Trigger
-                </Button>
-              </div>
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogTrigger asChild>
+          <Button onClick={resetForm} size="sm" className="w-full">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Trigger
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingTrigger ? "Edit" : "Add"} Trigger
+            </DialogTitle>
+            <DialogDescription>
+              Configure when and how this workflow should execute
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div>
+              <Label>Trigger Name</Label>
+              <Input
+                value={triggerName}
+                onChange={(e) => setTriggerName(e.target.value)}
+                placeholder="e.g., On New Order"
+                className="mt-1"
+              />
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
+
+            <div>
+              <Label>Trigger Type</Label>
+              <Select value={triggerType} onValueChange={(v: any) => setTriggerType(v)}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="webhook">Webhook</SelectItem>
+                  <SelectItem value="schedule">Schedule</SelectItem>
+                  <SelectItem value="manual">Manual</SelectItem>
+                  <SelectItem value="event">Event</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Webhook Configuration */}
+            {triggerType === "webhook" && (
+              <Card className="p-4 bg-muted/50">
+                <div className="flex items-start gap-2">
+                  <Webhook className="w-5 h-5 text-primary mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm">Webhook Configuration</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Workflow will trigger when a POST request is sent to the webhook URL
+                    </p>
+                    <div className="mt-3">
+                      <Label className="text-xs">HTTP Method</Label>
+                      <Select
+                        value={triggerConfig.method || "POST"}
+                        onValueChange={(v) =>
+                          setTriggerConfig({ ...triggerConfig, method: v })
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="POST">POST</SelectItem>
+                          <SelectItem value="GET">GET</SelectItem>
+                          <SelectItem value="PUT">PUT</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="mt-3">
+                      <Label className="text-xs">Authentication</Label>
+                      <Select
+                        value={triggerConfig.auth || "none"}
+                        onValueChange={(v) =>
+                          setTriggerConfig({ ...triggerConfig, auth: v })
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="api_key">API Key</SelectItem>
+                          <SelectItem value="bearer">Bearer Token</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Schedule Configuration */}
+            {triggerType === "schedule" && (
+              <Card className="p-4 bg-muted/50">
+                <div className="flex items-start gap-2">
+                  <Clock className="w-5 h-5 text-primary mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-sm">Schedule Configuration</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Run workflow on a recurring schedule
+                    </p>
+                    <div className="mt-3">
+                      <Label className="text-xs">Cron Expression</Label>
+                      <Input
+                        value={triggerConfig.cron || ""}
+                        onChange={(e) =>
+                          setTriggerConfig({ ...triggerConfig, cron: e.target.value })
+                        }
+                        placeholder="0 0 * * *"
+                        className="mt-1 font-mono text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Example: "0 0 * * *" runs daily at midnight
+                      </p>
+                    </div>
+                    <div className="mt-3">
+                      <Label className="text-xs">Timezone</Label>
+                      <Select
+                        value={triggerConfig.timezone || "UTC"}
+                        onValueChange={(v) =>
+                          setTriggerConfig({ ...triggerConfig, timezone: v })
+                        }
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="UTC">UTC</SelectItem>
+                          <SelectItem value="America/New_York">Eastern</SelectItem>
+                          <SelectItem value="America/Los_Angeles">Pacific</SelectItem>
+                          <SelectItem value="Europe/London">London</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Manual Configuration */}
+            {triggerType === "manual" && (
+              <Card className="p-4 bg-muted/50">
+                <div className="flex items-start gap-2">
+                  <Play className="w-5 h-5 text-primary mt-0.5" />
+                  <div>
+                    <h4 className="font-semibold text-sm">Manual Trigger</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Workflow runs only when manually triggered from the UI
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveTrigger}>
+                {editingTrigger ? "Update" : "Create"} Trigger
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="space-y-2">
         {triggers.length === 0 ? (
@@ -391,6 +383,6 @@ export function WorkflowTriggers({
           ))
         )}
       </div>
-    </div>
+    </div >
   );
 }

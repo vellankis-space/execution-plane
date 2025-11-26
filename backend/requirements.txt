@@ -76,4 +76,4 @@ fastmcp==2.13.1
 # Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
-pytest-cov==4.1.0
+pytest-cov==4.1.0mcp>=0.1.0

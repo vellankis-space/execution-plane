@@ -36,10 +36,9 @@ class Settings(BaseSettings):
     
     # MCP Tools settings
     # Maximum number of MCP tools to load per agent to prevent token overflow
-    # Large numbers of tools (e.g., 47 from CoinGecko) can cause 413 Payload Too Large errors
-    # Increased from 15 to 30 to allow more comprehensive tool usage
-    # With improved system prompts and 2000 max_tokens, agents can handle more tools
-    MAX_MCP_TOOLS_PER_AGENT: int = int(os.getenv("MAX_MCP_TOOLS_PER_AGENT", "30"))
+    # Set MAX_MCP_TOOLS_PER_AGENT in the environment if you want to enforce a limit.
+    # Default of 0 means "no limit" so all MCP tools remain available.
+    MAX_MCP_TOOLS_PER_AGENT: int = int(os.getenv("MAX_MCP_TOOLS_PER_AGENT", "0"))
     
     class Config:
         case_sensitive = True

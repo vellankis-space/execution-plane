@@ -9,6 +9,7 @@ from pydantic import Field, create_model
 from sqlalchemy.orm import Session
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
+from engine.builder import AgentBuilder
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -271,6 +272,16 @@ class AgentService:
         db_agents = query.all()
         return [AgentInDB.model_validate(agent) for agent in db_agents]
     
+    async def count_agents(self, tenant_id: Optional[str] = None) -> int:
+        """Count total agents, optionally filtered by tenant"""
+        query = self.db.query(AgentModel)
+        
+        # Apply tenant filter if provided
+        if tenant_id:
+            query = query.filter(AgentModel.tenant_id == tenant_id)
+            
+        return query.count()
+    
     async def delete_agent(self, agent_id: str, tenant_id: Optional[str] = None) -> bool:
         """Delete an agent by ID, optionally filtered by tenant"""
         query = self.db.query(AgentModel).filter(AgentModel.agent_id == agent_id)
@@ -286,7 +297,7 @@ class AgentService:
             return True
         return False
     
-    async def get_agent_mcp_tools(self, agent_id: str) -> List[Any]:
+    async def get_agent_mcp_tools(self, agent_id: str) -> List[Dict[str, Any]]:
         """
         Load MCP tools for an agent from associated MCP servers.
         Returns a list of LangChain tools that can be used by the agent.
@@ -449,324 +460,14 @@ class AgentService:
                         tools = [t for t in tools if t.get("name") in selected_tools]
                         logger.info(f"Filtered from {original_count} to {len(tools)} selected tools from MCP server {server.name}")
                     else:
-                        # Special handling for Playwright: Filter to core tools to save tokens
-                        if "Playwright" in server.name:
-                            core_playwright_tools = [
-                                "browser_navigate",
-                                "browser_click",
-                                "browser_type",
-                                "browser_wait_for",
-                                "browser_evaluate",
-                                "browser_take_screenshot",
-                                "browser_press_key",
-                                "browser_fill_form"
-                            ]
-                            original_count = len(tools)
-                            tools = [t for t in tools if t.get("name") in core_playwright_tools]
-                            logger.info(f"Auto-filtered Playwright tools from {original_count} to {len(tools)} core tools to save tokens")
-                        else:
-                            logger.info(f"No tool filtering - loading all {len(tools)} tools from MCP server {server.name}")
+                        # Load all tools from the server
+                        logger.info(f"No tool filtering - loading all {len(tools)} tools from MCP server {server.name}")
                     
-                    # Convert MCP tools to LangChain tools
+                    # Add raw MCP tools to list (no conversion)
                     for tool_info in tools:
-                        tool_name = tool_info.get("name")
-                        input_schema = tool_info.get("inputSchema") or {}
-                        schema_description = json.dumps(input_schema, indent=2) if input_schema else "{}"
-
-                        # FIX: Use factory function to avoid closure bug
-                        # Without this, all wrappers would call the LAST tool in the loop!
-                        def make_mcp_tool_runner(server_id: str, tool_name: str, schema: dict):
-                            async def _run_mcp_tool(payload: Any = None, *, extra_kwargs: Optional[Dict[str, Any]] = None) -> str:
-                                arguments = payload
-                                if isinstance(arguments, str):
-                                    try:
-                                        arguments = json.loads(arguments)
-                                    except json.JSONDecodeError:
-                                        raise ValueError("Payload must be valid JSON when provided as a string")
-                                if arguments is None:
-                                    arguments = {}
-                                if not isinstance(arguments, dict):
-                                    raise ValueError("Payload must be an object containing the MCP tool arguments")
-                                if extra_kwargs:
-                                    # kwargs take precedence / merge
-                                    arguments = {**arguments, **extra_kwargs}
-
-                                # CRITICAL FIX: Preprocess arguments to handle LLM quirks
-                                # LLMs sometimes emit string 'null', 'undefined', 'none', '{}' instead of actual values
-                                # This causes Pydantic validation errors like: input_value='null', input_type=str
-                                if isinstance(arguments, dict):
-                                    cleaned_args = {}
-                                    for key, value in arguments.items():
-                                        # Handle string representations of null/undefined/empty
-                                        if isinstance(value, str):
-                                            value_lower = value.lower().strip()
-                                            
-                                            # Skip null-like strings
-                                            if value_lower in ['null', 'undefined', 'none']:
-                                                logger.debug(f"Skipping argument '{key}' with string value '{value}' (treating as omitted)")
-                                                continue
-                                            
-                                            # Handle string '{}' or '[]' - try to parse as JSON
-                                            if value_lower in ['{}', '[]']:
-                                                try:
-                                                    parsed = json.loads(value)
-                                                    logger.debug(f"Parsed argument '{key}' from string '{value}' to {type(parsed).__name__}")
-                                                    value = parsed
-                                                except json.JSONDecodeError:
-                                                    logger.debug(f"Could not parse '{value}' as JSON for argument '{key}'")
-                                                    continue  # Skip if can't parse
-                                        
-                                        cleaned_args[key] = value
-                                    
-                                    # Log the preprocessing results
-                                    if len(cleaned_args) != len(arguments):
-                                        logger.info(f"Preprocessed arguments for {tool_name}: removed {len(arguments) - len(cleaned_args)} problematic arguments")
-                                    
-                                    arguments = cleaned_args
-
-                                # Validate browser_wait_for arguments to prevent circuit breaker trips
-                                if "browser_wait_for" in tool_name:
-                                    if not (arguments.get("time") or arguments.get("text") or arguments.get("textGone")):
-                                        return (
-                                            f"Missing required arguments for {tool_name}. "
-                                            f"You MUST provide at least one of: 'time' (milliseconds), 'text' (wait for text to appear), or 'textGone' (wait for text to disappear). "
-                                            f"Example: {{'text': 'Submit'}} or {{'time': 5000}}"
-                                        )
-
-                                # Validate required fields before calling MCP server to avoid -32602 errors
-                                required_fields = schema.get("required", []) if isinstance(schema, dict) else []
-                                properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
-                                missing_fields = []
-                                for field_name in required_fields:
-                                    if self._is_missing_value(arguments.get(field_name)):
-                                        missing_fields.append(field_name)
-                                if missing_fields:
-                                    required_descriptions = []
-                                    for missing in missing_fields:
-                                        prop_info = properties.get(missing, {}) if isinstance(properties, dict) else {}
-                                        prop_desc = prop_info.get("description", "")
-                                        required_descriptions.append(f"- {missing}: {prop_desc or 'Required field'}")
-                                    human_error = (
-                                        f"Missing required field(s) for {tool_name}: {', '.join(missing_fields)}."
-                                    )
-                                    if required_descriptions:
-                                        human_error += "\nRequired fields:\n" + "\n".join(required_descriptions)
-                                    return human_error
-
-                                # Auto-safeguard Puppeteer evaluate scripts to avoid null errors
-                                if tool_name == "puppeteer_evaluate" and isinstance(arguments.get("script"), str):
-                                    original_script = arguments["script"]
-                                    safe_script = self._safeguard_puppeteer_script(original_script)
-                                    if safe_script != original_script:
-                                        logger.debug("Applied optional chaining safeguards to puppeteer_evaluate script")
-                                    arguments["script"] = safe_script
-                                
-                                # Auto-map 'script' to 'function' for Playwright evaluate
-                                if tool_name == "browser_evaluate" and "script" in arguments and "function" not in arguments:
-                                    logger.info("Mapping 'script' argument to 'function' for browser_evaluate")
-                                    arguments["function"] = arguments.pop("script")
-
-                                try:
-                                    result = await fastmcp_manager.call_tool(server_id, tool_name, arguments)
-                                    logger.debug(
-                                        "MCP tool %s on %s returned: %s",
-                                        tool_name,
-                                        server_id,
-                                        result,
-                                    )
-                                    return str(result)
-                                except Exception as call_error:
-                                    error_msg = str(call_error)
-                                    logger.error(f"Error calling MCP tool {tool_name} on server {server_id}: {call_error}")
-                                
-                                # Check for circuit breaker error
-                                if "Circuit breaker open" in error_msg:
-                                    return (
-                                        f"Tool {tool_name} has failed too many times and is temporarily disabled. "
-                                        f"The tool or API may be experiencing issues. Please try a different approach or tool, "
-                                        f"or wait a few minutes before trying again."
-                                    )
-                                
-                                # Check for rate limit errors
-                                if "429" in error_msg or "Too Many Requests" in error_msg or "rate limit" in error_msg.lower():
-                                    return (
-                                        f"Rate limit reached for {tool_name}. The API is temporarily blocking requests. "
-                                        f"This usually happens when making too many requests in a short time. "
-                                        f"Please wait a moment or try a different tool."
-                                    )
-                                
-                                # Check for jq parsing errors (common in CoinGecko and similar tools)
-                                if "jq:" in error_msg or "jq error" in error_msg.lower():
-                                    if "Cannot index" in error_msg:
-                                        return (
-                                            f"Data format error in {tool_name}: The API returned data in a different format than expected. "
-                                            f"The tool script tried to access a field that doesn't exist. "
-                                            f"This is likely a temporary issue with the external API. Try again later or use a different tool."
-                                        )
-                                    else:
-                                        return (
-                                            f"Data parsing error in {tool_name}: {error_msg}. "
-                                            f"The tool couldn't process the API response correctly. This is usually a temporary issue. "
-                                            f"Try again later or use a different tool."
-                                        )
-                                
-                                # Check for timeout errors
-                                if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-                                    return (
-                                        f"Timeout error for {tool_name}: The tool took too long to respond. "
-                                        f"The external API may be slow or overloaded. Try again or use a different tool."
-                                    )
-                                
-                                # Provide specific guidance for common JavaScript errors (Puppeteer)
-                                if "puppeteer_evaluate" in tool_name:
-                                    if "Cannot convert undefined or null" in error_msg:
-                                        return (
-                                            f"JavaScript error: The element you're trying to access doesn't exist or is null. "
-                                            f"Use optional chaining (?.) and provide fallback values. "
-                                            f"Example: document.querySelector('selector')?.textContent || 'Not found'"
-                                        )
-                                    elif "Illegal return statement" in error_msg:
-                                        return (
-                                            f"JavaScript syntax error: Do NOT use 'return' statements in evaluate. "
-                                            f"Just write the expression directly. The result is automatically returned. "
-                                            f"Example: document.querySelector('h1').textContent (not 'return document...')"
-                                        )
-                                    elif "has already been declared" in error_msg:
-                                        return (
-                                            f"JavaScript error: Variable redeclaration. Do NOT declare variables with const/let/var. "
-                                            f"Use inline expressions or arrow functions instead. "
-                                            f"Example: Array.from(document.querySelectorAll('a')).map(el => el.href)"
-                                        )
-                                    elif "SyntaxError" in error_msg or "Unexpected token" in error_msg:
-                                        return (
-                                            f"JavaScript syntax error: {error_msg}. "
-                                            f"Write a single valid JavaScript expression without semicolons or statements. "
-                                            f"Use arrow functions for complex logic: () => document.body.textContent"
-                                        )
-                                
-
-                                
-
-                                
-                                # Handle "No open pages" error specifically
-                                if "No open pages" in error_msg:
-                                    return (
-                                        f"Error: No open pages available. The browser session may have been reset. "
-                                        f"Please call 'browser_navigate' again to reload the page, then retry this tool."
-                                    )
-                                
-                                return (
-                                    f"Tool execution error for {tool_name}: {error_msg}. "
-                                    f"Please review the error and adjust your approach."
-                                )
-                            return _run_mcp_tool
-                        
-                        # Create the runner function with captured values
-                        run_mcp_tool = make_mcp_tool_runner(server.server_id, tool_name, input_schema)
-
-                        tool_properties = input_schema.get("properties") if isinstance(input_schema, dict) else None
-                        required_props = input_schema.get("required", []) if isinstance(input_schema, dict) else []
-
-                        if tool_properties:
-                            schema_fields = {}
-                            for prop_name, prop_schema in tool_properties.items():
-                                is_required = prop_name in required_props
-                                description = prop_schema.get("description", "")
-                                python_type = self._json_schema_to_python_type(prop_schema)
-                                
-                                # For optional fields, use Optional[Type] and default=None
-                                # This allows the LLM to omit fields or pass None/null
-                                if is_required:
-                                    default = ...
-                                else:
-                                    # Make it Optional
-                                    python_type = Optional[python_type]
-                                    default = prop_schema.get("default", None)
-                                
-                                schema_fields[prop_name] = (python_type, Field(default=default, description=description))
-
-                            schema_model_name = f"{server.name}_{tool_name}_Schema".replace(" ", "_")
-                            ToolArgsModel = create_model(schema_model_name, **schema_fields)  # type: ignore
-
-                            @tool(args_schema=ToolArgsModel)
-                            async def mcp_tool_wrapper(**kwargs):
-                                """MCP Tool call. Provide arguments matching schema."""
-                                return await run_mcp_tool(kwargs)
-                        else:
-                            @tool
-                            async def mcp_tool_wrapper(payload: Optional[Dict[str, Any]] = None, **kwargs) -> str:
-                                """MCP Tool call. Provide arguments as JSON object matching schema. Accepts either 'payload' or direct named parameters."""
-                                return await run_mcp_tool(payload, extra_kwargs=kwargs)
-
-                        # Set tool metadata (sanitize to satisfy provider requirements)
-                        raw_tool_identifier = f"{server.name}_{tool_name}"
-                        sanitized_tool_name = self._sanitize_tool_name(raw_tool_identifier, existing_tool_names)
-                        if sanitized_tool_name != raw_tool_identifier:
-                            logger.info(
-                                "Sanitized MCP tool name from '%s' to '%s' to satisfy provider constraints",
-                                raw_tool_identifier,
-                                sanitized_tool_name,
-                            )
-
-                        mcp_tool_wrapper.name = sanitized_tool_name
-                        description = tool_info.get('description', 'MCP tool')
-                        
-                        # Add enhanced guidance for Puppeteer/Playwright tools
-                        if "puppeteer" in server.name.lower() or "playwright" in server.name.lower():
-                            if tool_name == "puppeteer_evaluate" or tool_name == "browser_evaluate":
-                                description += (
-                                    "\n\n**IMPORTANT JavaScript Guidelines:**\n"
-                                    "- Write a SINGLE JavaScript expression or statement\n"
-                                    "- Do NOT use 'return' statements (the result is auto-returned)\n"
-                                    "- Do NOT declare variables with 'const', 'let', or 'var'\n"
-                                    "- Use arrow functions: () => expression\n"
-                                    "- For element access: document.querySelector('selector')?.textContent\n"
-                                    "- For arrays: Array.from(document.querySelectorAll('selector')).map(el => el.textContent)\n"
-                                    "- Example: document.querySelector('h1')?.textContent || 'Not found'\n"
-                                    "\n**WARNING**: If this tool fails, DO NOT retry with the same script. "
-                                    "Use alternative tools like puppeteer_click, puppeteer_screenshot, or puppeteer_navigate instead.\n"
-                                )
-                                if tool_name == "browser_evaluate":
-                                    description += (
-                                        "\n**NOTE**: This tool expects a 'function' argument (e.g. '() => document.title'). "
-                                        "If you have a 'script' or 'expression', wrap it in an arrow function."
-                                    )
-                            else:
-                                # Add general Puppeteer tool guidance
-                                description += (
-                                    "\n\n**Puppeteer Tool - Reliable browser automation**\n"
-                                    "This tool works well for browser interactions. Use it confidently!\n"
-                                    "Other available Puppeteer tools: navigate, click, screenshot, evaluate, etc.\n"
-                                    "Note: If this tool encounters an error, try a different Puppeteer tool.\n"
-                                )
-                        elif tool_name == "browser_navigate":
-                            description += (
-                                "\n\n**Navigation Tool:**\n"
-                                "- Use this tool FIRST to open a website.\n"
-                                "- Required argument: 'url' (e.g. 'https://google.com')\n"
-                                "- You MUST navigate to a page before using other browser tools."
-                            )
-                        elif tool_name == "browser_wait_for":
-                            description += (
-                                "\n\n**Wait Tool Guidelines:**\n"
-                                "- You MUST provide at least one of: 'time', 'text', or 'textGone'\n"
-                                "- 'time': Wait for X milliseconds (e.g. 5000)\n"
-                                "- 'text': Wait for text to appear on screen\n"
-                                "- 'textGone': Wait for text to disappear\n"
-                            )
-                        elif tool_name == "ask_question":
-                            description += (
-                                "\n\n**DeepWiki Tool Guidelines:**\n"
-                                "- Required field: question (string)\n"
-                                "- Provide the exact question you want answered\n"
-                                "- Example: 'What is LangGraph?'\n"
-                            )
-                        
-                        description += f"\nOriginal MCP tool identifier: {raw_tool_identifier}"
-                        description += f"\nInput schema: {schema_description}"
-                        mcp_tool_wrapper.description = description
-
-                        mcp_tools.append(mcp_tool_wrapper)
+                        # Inject server_id so the executor knows where to route the call
+                        tool_info["server_id"] = server.server_id
+                        mcp_tools.append(tool_info)
                         
                     logger.info(f"Loaded {len(tools)} tools from MCP server {server.name}")
                     
@@ -785,26 +486,28 @@ class AgentService:
             # Large numbers of tools cause 413 Payload Too Large errors with LLMs
             max_tools = settings.MAX_MCP_TOOLS_PER_AGENT
             
-            if not has_selected_tools and len(mcp_tools) > max_tools:
-                trimmed_tool_names = [t.name for t in mcp_tools[max_tools:]]
-                logger.warning(
-                    f"⚠️  Agent {agent_id} has {len(mcp_tools)} MCP tools, which exceeds the limit of {max_tools}. "
-                    f"Trimming to first {max_tools} tools to prevent token overflow. "
-                    f"Trimmed tools: {trimmed_tool_names}. "
-                    f"To avoid this, select specific tools for each MCP server, or set MAX_MCP_TOOLS_PER_AGENT in .env file."
-                )
-                print(
-                    f"⚠️  WARNING: Too many MCP tools ({len(mcp_tools)})! Limiting to {max_tools} tools to prevent API errors. "
-                    f"Trimmed tools: {', '.join(trimmed_tool_names[:5])}{'...' if len(trimmed_tool_names) > 5 else ''}. "
-                    f"Use the tool selection feature to choose specific tools instead of loading all tools from MCP servers."
-                )
-                # Keep only the first N tools
-                mcp_tools = mcp_tools[:max_tools]
-            elif has_selected_tools and len(mcp_tools) > max_tools:
-                logger.warning(
-                    f"⚠️  Agent {agent_id} has {len(mcp_tools)} selected tools, which exceeds the recommended limit of {max_tools}. "
-                    f"This may cause token overflow errors. Consider selecting fewer tools."
-                )
+            if max_tools > 0:
+                if not has_selected_tools and len(mcp_tools) > max_tools:
+                    # MCP tools are dicts, not objects - use dict access
+                    trimmed_tool_names = [t.get("name", "unknown") for t in mcp_tools[max_tools:]]
+                    logger.warning(
+                        f"⚠️  Agent {agent_id} has {len(mcp_tools)} MCP tools, which exceeds the limit of {max_tools}. "
+                        f"Trimming to first {max_tools} tools to prevent token overflow. "
+                        f"Trimmed tools: {trimmed_tool_names}. "
+                        f"To avoid this, select specific tools for each MCP server, or set MAX_MCP_TOOLS_PER_AGENT in .env file."
+                    )
+                    print(
+                        f"⚠️  WARNING: Too many MCP tools ({len(mcp_tools)})! Limiting to {max_tools} tools to prevent API errors. "
+                        f"Trimmed tools: {', '.join(trimmed_tool_names[:5])}{'...' if len(trimmed_tool_names) > 5 else ''}. "
+                        f"Use the tool selection feature to choose specific tools instead of loading all tools from MCP servers."
+                    )
+                    # Keep only the first N tools
+                    mcp_tools = mcp_tools[:max_tools]
+                elif has_selected_tools and len(mcp_tools) > max_tools:
+                    logger.warning(
+                        f"⚠️  Agent {agent_id} has {len(mcp_tools)} selected tools, which exceeds the recommended limit of {max_tools}. "
+                        f"This may cause token overflow errors. Consider selecting fewer tools."
+                    )
             
             logger.info(f"Total MCP tools loaded for agent {agent_id}: {len(mcp_tools)}")
             return mcp_tools
@@ -988,11 +691,20 @@ class AgentService:
             else:
                 return f"Error communicating with the agent: {error_msg}"
     
-    async def execute_agent(self, agent_id: str, input_text: str, session_id: Optional[str] = None, recursion_limit: int = 50) -> str:
-        """Execute an agent with automatic rate limit handling"""
+    async def execute_agent(self, agent_id: str, input_text: str, session_id: Optional[str] = None) -> str:
+        """
+        Execute an agent with automatic rate limit handling.
+        
+        NOTE: recursion_limit is now taken from agent configuration (single source of truth).
+        Users can configure it in the UI when creating/editing an agent.
+        """
         agent = await self.get_agent(agent_id)
         if not agent:
             raise ValueError("Agent not found")
+        
+        # Use agent's configured recursion_limit (single source of truth)
+        recursion_limit = agent.recursion_limit if hasattr(agent, 'recursion_limit') and agent.recursion_limit else 50
+        logger.info(f"🔄 Using recursion limit from agent config: {recursion_limit}")
         
         # Check if rate limit fallback is enabled (can be disabled via env var)
         enable_rate_limit_fallback = os.getenv("ENABLE_RATE_LIMIT_FALLBACK", "true").lower() == "true"
@@ -1025,8 +737,7 @@ class AgentService:
                     session_id=session_id,
                     user_id=session_id if session_id else f"agent_{agent_id}",
                     override_provider=current_provider,
-                    override_model=current_model,
-                    recursion_limit=recursion_limit
+                    override_model=current_model
                 )
             except Exception as e:
                 error_msg = str(e)
@@ -1138,14 +849,20 @@ class AgentService:
         session_id: Optional[str],
         user_id: str,
         override_provider: Optional[str] = None,
-        override_model: Optional[str] = None,
-        recursion_limit: int = 50
+        override_model: Optional[str] = None
     ) -> str:
-        """Execute agent with current configuration (helper method for retry logic)"""
+        """
+        Execute agent with current configuration (helper method for retry logic).
+        
+        NOTE: Uses agent.recursion_limit from config (single source of truth).
+        """
         try:
             # Use override values if provided, otherwise use agent's configured values
             active_provider = override_provider or agent.llm_provider
             active_model = override_model or agent.llm_model
+            
+            # Get recursion limit from agent config (single source of truth)
+            recursion_limit = agent.recursion_limit if hasattr(agent, 'recursion_limit') and agent.recursion_limit else 50
             
             # Retrieve relevant memories from mem0 if enabled
             memory_context = ""
@@ -1209,21 +926,10 @@ class AgentService:
             # Add timeout to prevent hanging on slow LLM responses
             import asyncio
             try:
-                # Get recursion limit from argument (precedence) or agent config, default to 50
-                # For MCP tool agents (like Puppeteer), higher limits are often needed
-                effective_recursion_limit = recursion_limit
-                if effective_recursion_limit == 50 and getattr(agent, "recursion_limit", None):
-                     # If default was passed but agent has specific config, use that? 
-                     # Actually, let's just trust the passed value if it's explicit, but since 50 is default...
-                     # Let's just say: use max of passed and configured? Or just use passed.
-                     # For this specific fix, I want to ensure the 100 passed from script is used.
-                     pass
-                
-                # If the argument is the default 50, but agent has a higher stored limit, we might want to respect that?
-                # But for now, let's just use the argument value as it's what we want to control.
-                
+                # Use recursion_limit from agent config (already set above)
                 config = {"recursion_limit": recursion_limit}
                 logger.info(f"Executing agent {agent.agent_id} with recursion_limit={recursion_limit}")
+
 
                 if agent.agent_type == "react":
                     # ReAct agents expect messages format
@@ -1396,18 +1102,18 @@ class AgentService:
             raise ValueError(f"An unexpected error occurred while processing your request: {error_msg}")
     
     async def stream_agent(self, websocket, agent_id: str, message: Optional[str] = None, session_id: Optional[str] = None):
-        """Stream agent responses via WebSocket using AG-UI Protocol"""
-        from services.ag_ui_protocol import AGUIProtocol, AGUIEventType
+        """Stream agent responses via WebSocket with real-time progress updates"""
         import uuid
+        import json
         
         agent = await self.get_agent(agent_id)
         if not agent:
-            error_msg = AGUIProtocol.create_error(
-                error="Agent not found",
-                error_code="AGENT_NOT_FOUND",
-                session_id=session_id
-            )
-            await websocket.send_text(error_msg.to_json())
+            error_event = {
+                "type": "error",
+                "error": "Agent not found",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            await websocket.send_json(error_event)
             await websocket.close()
             return
         
@@ -1415,26 +1121,8 @@ class AgentService:
         session_id = session_id or f"session_{run_id}"
         
         try:
-            # Send RUN_STARTED event
-            run_started = AGUIProtocol.create_run_started(
-                run_id=run_id,
-                session_id=session_id,
-                metadata={"agent_id": agent_id, "agent_name": agent.name}
-            )
-            await websocket.send_text(run_started.to_json())
-            
-            # If message provided, process it
+            # If message provided, execute with streaming
             if message:
-                # Send user message
-                user_msg = AGUIProtocol.create_text_message(
-                    content=message,
-                    run_id=run_id,
-                    session_id=session_id,
-                    role="user"
-                )
-                await websocket.send_text(user_msg.to_json())
-                
-                # Execute agent with streaming
                 response = await self._execute_agent_with_streaming(
                     agent_id=agent_id,
                     input_text=message,
@@ -1442,25 +1130,28 @@ class AgentService:
                     websocket=websocket,
                     run_id=run_id
                 )
-            
-            # Send RUN_FINISHED event
-            run_finished = AGUIProtocol.create_run_finished(
-                run_id=run_id,
-                session_id=session_id
-            )
-            await websocket.send_text(run_finished.to_json())
+            else:
+                # No message provided, just close
+                logger.warning("No message provided to stream_agent")
             
         except Exception as e:
             logger.error(f"Error in stream_agent: {e}")
-            error_msg = AGUIProtocol.create_error(
-                error=str(e),
-                error_code="EXECUTION_ERROR",
-                run_id=run_id,
-                session_id=session_id
-            )
-            await websocket.send_text(error_msg.to_json())
+            import traceback
+            traceback.print_exc()
+            error_event = {
+                "type": "error",
+                "error": str(e),
+                "run_id": run_id,
+                "session_id": session_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            await websocket.send_json(error_event)
         finally:
-            await websocket.close()
+            # Close connection when done
+            try:
+                await websocket.close()
+            except:
+                pass
     
     async def _execute_agent_with_streaming(
         self,
@@ -1470,8 +1161,8 @@ class AgentService:
         websocket,
         run_id: str
     ) -> str:
-        """Execute agent with AG-UI Protocol streaming"""
-        from services.ag_ui_protocol import AGUIProtocol
+        """Execute agent with LangGraph astream_events for real-time progress streaming"""
+        from datetime import datetime
         
         agent = await self.get_agent(agent_id)
         if not agent:
@@ -1484,7 +1175,7 @@ class AgentService:
             if pii_middleware:
                 filtered_input = pii_middleware.process_message(input_text, message_type="input")
         
-        # Create agent graph
+        # Create agent graph with memory context
         memory_context = ""
         if self.memory_service.is_enabled():
             try:
@@ -1497,55 +1188,149 @@ class AgentService:
                     llm_model="llama-3.1-8b-instant"
                 )
                 if memories:
-                    memory_context = "\n".join([m.get("memory", "") for m in memories])
+                    memory_context = "\\n".join([m.get("memory", "") for m in memories])
             except Exception as e:
                 logger.warning(f"Error retrieving memory: {e}")
         
         agent_graph, _ = await self._create_langgraph_agent(agent, memory_context)
         
-        # Execute with streaming callback
+        # Track streaming state
         accumulated_response = ""
-        
-        async def stream_callback(chunk: str):
-            """Callback for streaming chunks"""
-            nonlocal accumulated_response
-            accumulated_response += chunk
-            
-            # Send stream chunk via AG-UI Protocol
-            chunk_msg = AGUIProtocol.create_stream_chunk(
-                chunk=chunk,
-                run_id=run_id,
-                session_id=session_id,
-                is_final=False
-            )
-            await websocket.send_text(chunk_msg.to_json())
+        active_tools = {}  # Track active tool calls {tool_call_id: {name, start_time}}
         
         try:
-            # Execute agent (this would need to be adapted for actual streaming)
-            # For now, we'll simulate streaming
-            response = await self.execute_agent(agent_id, filtered_input, session_id)
+            # Use astream instead of astream_events for better compatibility
+            config = {"configurable": {"thread_id": session_id}}
+            input_messages = {"messages": [HumanMessage(content=filtered_input)]}
             
-            # Send response as text message
-            text_msg = AGUIProtocol.create_text_message(
-                content=response,
-                run_id=run_id,
-                session_id=session_id,
-                role="assistant"
-            )
-            await websocket.send_text(text_msg.to_json())
+            logger.info(f"🚀 Starting agent execution with streaming for agent {agent_id}")
+            
+            # Send initial thinking event
+            thinking_event = {
+                "type": "agent_thinking",
+                "run_id": run_id,
+                "session_id": session_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            await websocket.send_json(thinking_event)
+            
+            # Stream the agent execution
+            async for chunk in agent_graph.astream(input_messages, config=config, stream_mode="updates"):
+                logger.info(f"� Received chunk: {chunk}")
+                
+                # Extract messages from the chunk
+                if isinstance(chunk, dict):
+                    for node_name, node_output in chunk.items():
+                        if isinstance(node_output, dict) and "messages" in node_output:
+                            messages = node_output["messages"]
+                            if isinstance(messages, list):
+                                for msg in messages:
+                                    # Handle AI message with content
+                                    if hasattr(msg, "content") and msg.content:
+                                        # SKIP tool messages to prevent double rendering (tool results are shown in UI)
+                                        if hasattr(msg, "type") and msg.type == "tool":
+                                            logger.debug(f"Skipping tool message content from streaming")
+                                            continue
+                                            
+                                        # SKIP intermediate AI messages that ONLY contain tool calls with no meaningful text
+                                        # These are "thinking" phases where the agent decides to use tools
+                                        # But ALLOW final messages that have both tool_calls AND substantial content
+                                        if hasattr(msg, "tool_calls") and msg.tool_calls:
+                                            # Check if content is empty or just whitespace
+                                            content_text = str(msg.content).strip()
+                                            if not content_text:
+                                                logger.debug(f"Skipping AI message with tool_calls and no content")
+                                                continue
+                                            # If there's actual content alongside tool_calls, stream it (it's the final response)
+                                            logger.debug(f"Streaming AI message with tool_calls but has content: {len(content_text)} chars")
+                                        
+                                        # Stream content token by token
+                                        content = str(msg.content)
+                                        # Send in chunks for smoother streaming
+                                        chunk_size = 10
+                                        for i in range(0, len(content), chunk_size):
+                                            token = content[i:i+chunk_size]
+                                            accumulated_response += token
+                                            
+                                            token_event = {
+                                                "type": "llm_token",
+                                                "content": token,
+                                                "run_id": run_id,
+                                                "session_id": session_id
+                                            }
+                                            await websocket.send_json(token_event)
+                                    
+                                    # Handle tool calls
+                                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                                        # Process only the first tool call to match sequential execution logic
+                                        # Additional tool calls will be reconsidered by the agent after each result
+                                        first_tool_call = msg.tool_calls[0]
+                                        tool_call_id = first_tool_call.get("id", str(uuid.uuid4()))
+                                        tool_name = first_tool_call.get("name", "unknown")
+                                        tool_args = first_tool_call.get("args", {})
+
+                                        # Track tool start (single active tool at a time)
+                                        active_tools[tool_call_id] = {
+                                            "name": tool_name,
+                                            "start_time": datetime.utcnow()
+                                        }
+
+                                        tool_start_event = {
+                                            "type": "tool_call_start",
+                                            "tool_name": tool_name,
+                                            "tool_id": tool_call_id,
+                                            "arguments": tool_args,
+                                            "run_id": run_id,
+                                            "session_id": session_id,
+                                            "timestamp": datetime.utcnow().isoformat()
+                                        }
+                                        await websocket.send_json(tool_start_event)
+                                        logger.info(f"🔧 Tool call started: {tool_name} (sequential mode)")
+                                    
+                                    # Handle tool messages (results)
+                                    if hasattr(msg, "type") and msg.type == "tool":
+                                        tool_call_id = getattr(msg, "tool_call_id", None)
+                                        if tool_call_id and tool_call_id in active_tools:
+                                            tool_info = active_tools[tool_call_id]
+                                            duration = (datetime.utcnow() - tool_info["start_time"]).total_seconds() * 1000
+                                            
+                                            tool_end_event = {
+                                                "type": "tool_call_end",
+                                                "tool_name": tool_info["name"],
+                                                "tool_id": tool_call_id,
+                                                "result": str(msg.content)[:500],
+                                                "duration_ms": int(duration),
+                                                "run_id": run_id,
+                                                "session_id": session_id,
+                                                "timestamp": datetime.utcnow().isoformat()
+                                            }
+                                            await websocket.send_json(tool_end_event)
+                                            logger.info(f"✅ Tool call completed: {tool_info['name']}")
+                                            del active_tools[tool_call_id]
+            
+            # Send completion event
+            complete_event = {
+                "type": "agent_complete",
+                "run_id": run_id,
+                "session_id": session_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            await websocket.send_json(complete_event)
+            logger.info("✅ Agent execution complete")
             
             # Apply PII filtering to output if configured
+            final_response = accumulated_response
             if agent.pii_config:
                 pii_middleware = create_pii_middleware_from_config(agent.pii_config)
                 if pii_middleware:
-                    response = pii_middleware.process_message(response, message_type="output")
+                    final_response = pii_middleware.process_message(accumulated_response, message_type="output")
             
             # Store in memory if enabled
             if self.memory_service.is_enabled():
                 try:
                     interaction = [
                         {"role": "user", "content": input_text},
-                        {"role": "assistant", "content": response}
+                        {"role": "assistant", "content": final_response}
                     ]
                     self.memory_service.add_memory(
                         interaction,
@@ -1557,17 +1342,18 @@ class AgentService:
                 except Exception as e:
                     logger.warning(f"Error storing memory: {e}")
             
-            return response
+            return final_response
             
         except Exception as e:
-            logger.error(f"Error executing agent: {e}")
-            error_msg = AGUIProtocol.create_error(
-                error=str(e),
-                error_code="AGENT_EXECUTION_ERROR",
-                run_id=run_id,
-                session_id=session_id
-            )
-            await websocket.send_text(error_msg.to_json())
+            logger.error(f"Error executing agent with streaming: {e}")
+            error_event = {
+                "type": "error",
+                "error": str(e),
+                "run_id": run_id,
+                "session_id": session_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            await websocket.send_json(error_event)
             raise
     
     async def _create_langgraph_agent(
@@ -1610,7 +1396,8 @@ class AgentService:
         # NOTE: MCP tools are ONLY loaded for agent_type="react"
         if agent_config.agent_type == "react":
             logger.info(f"Agent {agent_config.agent_id} is type='react' - will load MCP tools")
-            return await self._create_react_agent(llm, agent_config, memory_context, knowledge_context)
+            graph = await self._create_react_agent(llm, agent_config, memory_context, knowledge_context)
+            return graph, []
         elif agent_config.agent_type == "plan-execute":
             return self._create_plan_execute_agent(llm, agent_config, memory_context), []
         elif agent_config.agent_type == "reflection":
@@ -1749,13 +1536,61 @@ class AgentService:
             if last_message.tool_calls:
                 return "tools"
             return END
+        
+        def tools_node(state: AgentState):
+            """Execute tools SEQUENTIALLY (one at a time) for more robust reasoning"""
+            from langchain_core.messages import ToolMessage
+            messages = state["messages"]
+            last_message = messages[-1]
+            
+            if not last_message.tool_calls:
+                return {"messages": []}
+            
+            # SEQUENTIAL EXECUTION: Only execute the FIRST tool call
+            # This allows the agent to see each result before deciding the next action
+            tool_calls = last_message.tool_calls
+            
+            if len(tool_calls) > 1:
+                logger.info(f"🔧 Agent requested {len(tool_calls)} tools, executing FIRST only (sequential mode)")
+                logger.info(f"   Executing: {tool_calls[0]['name']}")
+                logger.info(f"   Deferred: {[tc['name'] for tc in tool_calls[1:]]}")
+            
+            # Execute only the first tool call
+            first_tool = tool_calls[0]
+            tool_name = first_tool["name"]
+            tool_args = first_tool.get("args", {})
+            tool_id = first_tool.get("id")
+            
+            # Find and execute the tool
+            tool_output = None
+            for tool in tools:
+                if tool.name == tool_name:
+                    try:
+                        tool_output = tool.invoke(tool_args)
+                        break
+                    except Exception as e:
+                        tool_output = f"Error executing tool: {str(e)}"
+                        logger.error(f"Tool execution error for {tool_name}: {e}")
+                        break
+            
+            if tool_output is None:
+                tool_output = f"Tool {tool_name} not found"
+            
+            # Create tool message
+            tool_message = ToolMessage(
+                content=str(tool_output),
+                tool_call_id=tool_id,
+                name=tool_name
+            )
+            
+            return {"messages": [tool_message]}
 
         # Create the graph
         workflow = StateGraph(AgentState)
 
         # Add nodes
         workflow.add_node("agent", agent_node)
-        workflow.add_node("tools", ToolNode(tools, handle_tool_errors=True))
+        workflow.add_node("tools", tools_node)
 
         # Add edges
         workflow.add_edge(START, "agent")
@@ -1769,206 +1604,50 @@ class AgentService:
         return workflow.compile()
 
     async def _create_react_agent(self, llm, agent_config, memory_context: str = "", knowledge_context: str = ""):
-        """Create a generic ReAct agent with adaptable tools.
-        Returns a tuple of (agent_graph, tool_names).
-        """
-        from langchain_core.prompts import PromptTemplate
-        from langchain_core.output_parsers import StrOutputParser
+        """Create a custom agent using AgentBuilder (Function Calling Engine)."""
         
-        # Check if the LLM supports tools (bind_tools method)
-        # FakeListLLM doesn't support tools, so we need to handle this case
-        tools = []
-        llm_supports_tools = hasattr(llm, 'bind_tools')
+        # Initialize builder with recursion limit from agent config (single source of truth)
+        recursion_limit = agent_config.recursion_limit if hasattr(agent_config, 'recursion_limit') and agent_config.recursion_limit else 50
+        builder = AgentBuilder(llm, recursion_limit=recursion_limit)
+        logger.info(f"🔄 Agent recursion limit set to: {recursion_limit}")
         
-        # DEBUGGING: Log LLM type and tool support
-        logger.info(f"_create_react_agent: LLM type={type(llm).__name__}, supports bind_tools={llm_supports_tools}")
-        if not llm_supports_tools:
-            logger.warning(f"⚠️ LLM {type(llm).__name__} does NOT support bind_tools - MCP tools will NOT be loaded!")
-
-        if llm_supports_tools:
-            # Load MCP tools first (from connected MCP servers)
-            # Load MCP tools first (from connected MCP servers)
-            # CRITICAL: Do not silence errors here. If MCP tools fail to load, the agent is broken.
+        # Load MCP tools (raw dicts)
+        try:
+            mcp_tools = await self.get_agent_mcp_tools(agent_config.agent_id)
+            for tool in mcp_tools:
+                builder.add_tool(tool)
+        except Exception as e:
+            logger.error(f"CRITICAL: Failed to load MCP tools for agent {agent_config.agent_id}: {e}")
+            raise Exception(f"Failed to initialize agent tools: {e}")
+            
+        # Load external tools
+        if hasattr(agent_config, 'tools') and agent_config.tools:
             try:
-                mcp_tools = await self.get_agent_mcp_tools(agent_config.agent_id)
-                if mcp_tools:
-                    tools.extend(mcp_tools)
+                tool_configs = getattr(agent_config, 'tool_configs', {}) or {}
+                other_tools = [t for t in agent_config.tools if t != "mcp_database" or not tool_configs.get("mcp_database")]
+                
+                if other_tools:
+                    external_tools = self.tools_service.get_tools(other_tools, tool_configs)
+                    for tool in external_tools:
+                        builder.add_tool(tool)
             except Exception as e:
-                logger.error(f"CRITICAL: Failed to load MCP tools for agent {agent_config.agent_id}: {e}")
-                # We re-raise because an agent configured with tools MUST have them
-                raise Exception(f"Failed to initialize agent tools: {e}")
-            
-            # Add external tools if configured
-            if hasattr(agent_config, 'tools') and agent_config.tools:
-                try:
-                    # Get tool configurations if available
-                    tool_configs = {}
-                    if hasattr(agent_config, 'tool_configs') and agent_config.tool_configs:
-                        tool_configs = agent_config.tool_configs
-                    
-                    print(f"DEBUG: Agent tools requested: {agent_config.tools}")
-                    print(f"DEBUG: Agent tool_configs: {tool_configs}")
-                    
-                    other_tools = []
-                    for tool_name in agent_config.tools:
-                        if tool_name == "mcp_database" and tool_configs.get("mcp_database"):
-                            continue
-                        other_tools.append(tool_name)
-                    
-                    print(f"DEBUG: Non-MCP tools to load: {other_tools}")
-                    
-                    # Get non-MCP external tools first
-                    if other_tools:
-                        external_tools = self.tools_service.get_tools(other_tools, tool_configs)
-                        tools.extend(external_tools)
-                        print(f"DEBUG: External tools loaded: {[t.name for t in external_tools]}")
-                except Exception as e:
-                    print(f"Error loading agent tools: {e}")
-            
-        # ✅ FIX: Only use create_react_agent when we actually have tools
-        # When tools=[] is passed to create_react_agent, LangGraph still configures it
-        # in "tool mode" with tool_choice="none", which causes Groq to error when
-        # the model tries to call tools despite tool_choice being "none"
-        if llm_supports_tools and tools:
-            # We have tools - use ReAct agent with tool binding
-            logger.info(f"Creating ReAct agent with {len(tools)} tools for agent {agent_config.agent_id}")
-            logger.info(f"Tool names: {[t.name for t in tools]}")
-            
-            # Build tool metadata for system prompt (name + description)
-            tool_metadata = []
-            for t in tools:
-                tool_info = {
-                    "name": t.name,
-                    "description": t.description if hasattr(t, 'description') and t.description else "No description available"
-                }
-                tool_metadata.append(tool_info)
-            
-            # IMPORTANT: Don't just bind tools - create_react_agent does this internally
-            # Passing llm_with_tools AND tools to create_react_agent can cause duplicate binding
-            # Just pass the base LLM and let create_react_agent handle tool binding
-            
-            # Construct the full system prompt here to pass as state_modifier
-            system_content = agent_config.system_prompt or "You are a helpful AI assistant."
-            
-            # Add knowledge base context if available
-            has_kb = False
-            if knowledge_context:
-                has_kb = True
-                system_content += f"\n\n## Knowledge Base Information\n{knowledge_context}"
-                system_content += "\n\n**Note**: This knowledge base contains verified information about this domain. You can use it for static/reference information, but remember your tools are available for real-time data and external actions."
-            
-            # Add memory context from previous conversations
-            if memory_context:
-                system_content += f"\n\n## Context from Previous Conversations\n{memory_context}"
-            
-            # Add available tools information with CLEAR ENCOURAGEMENT to use them
-            if tool_metadata:
-                # Build tool list with full descriptions from tool metadata
-                tool_descriptions = []
-                for tool in tool_metadata:
-                    tool_name = tool.get("name", "")
-                    tool_desc = tool.get("description", "") or "No description provided."
+                logger.error(f"Error loading external tools: {e}")
 
-                    # Preserve full instructions for Puppeteer evaluate (contains critical guidance)
-                    if tool_name and "puppeteer_evaluate" in tool_name.lower():
-                        final_desc = tool_desc
-                    else:
-                        max_len = 400
-                        final_desc = tool_desc if len(tool_desc) <= max_len else tool_desc[:max_len].rstrip() + "..."
-
-                    tool_descriptions.append(f"  • **{tool_name}**: {final_desc}")
-                
-                tools_list = "\n".join(tool_descriptions)
-                
-                system_content += (
-                    f"\n\n## 🛠️ YOUR AVAILABLE TOOLS (USE THESE ACTIVELY!)\n"
-                    f"You have {len(tools)} powerful tools ready to use:\n"
-                    f"{tools_list}\n\n"
-                    "**⚡ TOOL USAGE IS ENCOURAGED:**\n"
-                    "• These tools are your PRIMARY way to complete tasks that require external actions\n"
-                    "• Use tools for web browsing, data extraction, API calls, automation, etc.\n"
-                    "• Tools work reliably - don't hesitate to use them!\n"
-                    "• When a task clearly needs a tool (like browsing a website), USE IT IMMEDIATELY\n"
-                )
-                
-                # Add balanced guidance about KB if it exists
-                if has_kb:
-                    system_content += (
-                        "\n**Balancing Knowledge Base and Tools:**\n"
-                        "• Knowledge Base: Good for static, verified domain information\n"
-                        "• Tools: REQUIRED for real-time data, external websites, automation, current information\n"
-                        "• If the task needs external data or actions → USE TOOLS (don't rely on KB)\n"
-                        "• If KB has the exact answer → You can use KB directly\n"
-                        "• When in doubt → Using tools is safer than guessing from KB\n"
-                    )
-                
-                system_content += (
-                    "\n**Tool Usage Best Practices:**\n"
-                    "• Choose the right tool for each task\n"
-                    "• Follow the tool's schema carefully (provide all required parameters)\n"
-                    "• If a tool fails once, read the error and try a different approach or tool\n"
-                    "• Break complex tasks into multiple tool calls if needed\n"
-                )
+        # Construct system prompt
+        system_content = agent_config.system_prompt or "You are a helpful AI assistant."
+        
+        if knowledge_context:
+            system_content += f"\n\n## Knowledge Base Information\n{knowledge_context}"
+            system_content += "\n\n**Note**: This knowledge base contains verified information. Use it for reference."
             
-            # Add error recovery guidance (de-emphasized, only as reference)
-            if tools:
-                system_content += (
-                    "\n\n## Error Recovery (Reference Only - Most Tools Work Fine)\n"
-                    "If a tool fails with an error:\n"
-                    "1. Read the error message - it often contains specific fix instructions\n"
-                    "2. Don't retry the exact same action - try a different approach or fix the parameters\n"
-                    "3. If one tool doesn't work, try an alternative tool\n"
-                    "4. After 2 failures with the same tool, switch to a different tool\n"
-                    "\nFor Puppeteer tools: If puppeteer_evaluate fails, try puppeteer_click, puppeteer_screenshot, or other tools.\n"
-                    "\n**CRITICAL PUPPETEER INSTRUCTION:**\n"
-                    "• You MUST call `browser_navigate` to open a page BEFORE using any other browser tool (wait, click, type, etc.).\n"
-                    "• If you see 'No open pages available', it means you forgot to navigate or the browser closed. Call `browser_navigate` immediately.\n"
-                )
+        if memory_context:
+            system_content += f"\n\n## Context from Previous Conversations\n{memory_context}"
             
-            # Enforce concise response style
-            system_content += (
-                "\n\nGuidelines:\n"
-                "1. **Step-by-Step**: Perform multi-step tasks one by one. Do not stop until the user's goal is fully achieved.\n"
-                "2. **Conciseness**: Keep responses concise (<=120 words). Use at most 5 bullet points.\n"
-                "3. **Clarification**: Ask at most one clarifying question only if necessary.\n"
-                "4. **No Fluff**: Avoid long introductions."
-            )
+        # Add tool guidance
+        if builder.tools:
+            system_content += "\n\n## 🛠️ AVAILABLE TOOLS\nUse these tools to perform actions. When a tool is applicable, use it immediately."
             
-            return self._create_custom_react_agent(llm, tools, system_prompt=system_content), tool_metadata
-        else:
-            # NO TOOLS or LLM doesn't support tools - create a simple conversational agent
-            # This avoids tool_choice configuration entirely and works with all providers
-            from langgraph.graph import StateGraph, START
-            from typing import Annotated
-            from typing_extensions import TypedDict
-            from operator import add
-            from langchain_core.messages import HumanMessage, AIMessage
-            
-            class MessagesState(TypedDict):
-                messages: Annotated[list, add]
-            
-            async def call_model(state: MessagesState):
-                """Simple conversational agent without tool infrastructure"""
-                messages = state["messages"]
-                
-                # Check if LLM has async support
-                if hasattr(llm, 'ainvoke'):
-                    response = await llm.ainvoke(messages)
-                else:
-                    # Fallback to sync invoke for mock LLMs
-                    import asyncio
-                    response = await asyncio.to_thread(llm.invoke, messages)
-                
-                return {"messages": [response]}
-            
-            # Create a simple conversational agent graph
-            logger.info(f"Creating simple conversational agent (no tools) for agent {agent_config.agent_id}")
-            workflow = StateGraph(MessagesState)
-            workflow.add_node("call_model", call_model)
-            workflow.add_edge(START, "call_model")
-            workflow.add_edge("call_model", END)
-            
-            return workflow.compile(), []
+        return builder.build(system_prompt=system_content)
     
     def _create_plan_execute_agent(self, llm, agent_config, memory_context: str = ""):
         """Create a generic Plan & Execute agent for complex multi-step tasks"""

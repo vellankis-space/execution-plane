@@ -110,7 +110,7 @@ export function AgentBuilder() {
   const [showCustomPIIForm, setShowCustomPIIForm] = useState(false);
   const [piiStrategy, setPIIStrategy] = useState<"redact" | "mask" | "hash" | "block">("redact");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  
+
   // Tool configurations
   const [toolConfigs, setToolConfigs] = useState<Record<string, any>>({});
   const [showToolConfig, setShowToolConfig] = useState<string | null>(null);
@@ -127,6 +127,9 @@ export function AgentBuilder() {
   const [selectedMcpServers, setSelectedMcpServers] = useState<string[]>([]);
   const [mcpServerConfigs, setMcpServerConfigs] = useState<Record<string, string[] | null>>({});
   const [loadingMcpServers, setLoadingMcpServers] = useState(false);
+  const [deletingServerId, setDeletingServerId] = useState<string | null>(null);
+  const [reconnectingServerId, setReconnectingServerId] = useState<string | null>(null);
+
 
   // Fetch agent data if in edit mode
   useEffect(() => {
@@ -161,7 +164,7 @@ export function AgentBuilder() {
                 setCustomPII(agent.pii_config.custom_pii_categories);
               }
             }
-            
+
             // Load MCP server configurations
             try {
               const mcpResponse = await fetch(`http://localhost:8000/api/v1/agents/${editAgentId}/mcp-servers`);
@@ -170,7 +173,7 @@ export function AgentBuilder() {
                 if (mcpData.mcp_servers && mcpData.mcp_servers.length > 0) {
                   const serverIds = mcpData.mcp_servers.map((s: any) => s.server_id);
                   setSelectedMcpServers(serverIds);
-                  
+
                   // Build mcpServerConfigs from selected_tools
                   const configs: Record<string, string[] | null> = {};
                   mcpData.mcp_servers.forEach((s: any) => {
@@ -225,13 +228,13 @@ export function AgentBuilder() {
       if (response.ok) {
         const data = await response.json();
         setAvailableModels(data.models || []);
-        
+
         setIsUsingApiKey(true);
         toast({
           title: "Models updated",
           description: `Fetched real-time models from ${llmProvider}`,
         });
-        
+
         // Set first model as default if current model is not in the list
         if (data.models && data.models.length > 0 && !data.models.includes(llmModel)) {
           setLlmModel(data.models[0]);
@@ -300,7 +303,7 @@ export function AgentBuilder() {
   const handleMcpServerToggle = (serverId: string) => {
     setSelectedMcpServers(prev => {
       const isCurrentlySelected = prev.includes(serverId);
-      
+
       if (isCurrentlySelected) {
         // Remove server and its tool config
         setMcpServerConfigs(configs => {
@@ -332,6 +335,8 @@ export function AgentBuilder() {
       return;
     }
 
+    setDeletingServerId(serverId);
+
     try {
       const response = await fetch(`http://localhost:8000/api/v1/mcp-servers/${serverId}`, {
         method: 'DELETE',
@@ -357,10 +362,14 @@ export function AgentBuilder() {
         description: error.message || 'Failed to delete MCP server',
         variant: 'destructive',
       });
+    } finally {
+      setDeletingServerId(null);
     }
   };
 
   const handleReconnectMcpServer = async (serverId: string, serverName: string) => {
+    setReconnectingServerId(serverId);
+
     try {
       toast({
         title: 'Connecting...',
@@ -394,6 +403,8 @@ export function AgentBuilder() {
         description: error.message || 'Failed to connect to MCP server',
         variant: 'destructive',
       });
+    } finally {
+      setReconnectingServerId(null);
     }
   };
 
@@ -413,7 +424,7 @@ export function AgentBuilder() {
   const handleToolsToggle = (toolId: string) => {
     setSelectedToolsList(prev => {
       const isSelected = prev.includes(toolId);
-      
+
       if (isSelected) {
         // Deselecting - remove from list and configs
         const newConfigs = { ...toolConfigs };
@@ -430,7 +441,7 @@ export function AgentBuilder() {
       }
     });
   };
-  
+
   const handleToolConfigSave = (toolId: string, config: any) => {
     setToolConfigs(prev => ({
       ...prev,
@@ -493,7 +504,7 @@ export function AgentBuilder() {
       "reference number": "REF-\\d{10}",
       "tracking number": "TRK-\\d{12}"
     };
-    
+
     const normalizedLabel = label.toLowerCase().trim();
     return patterns[normalizedLabel] || `${label.replace(/\s+/g, '-').toUpperCase()}-\\d{5}`;
   };
@@ -542,21 +553,21 @@ export function AgentBuilder() {
       human_in_loop: humanInLoop,
       recursion_limit: parseInt(recursionLimit),
       pii_config: pii_config,
-      mcp_server_configs: selectedMcpServers.length > 0 
+      mcp_server_configs: selectedMcpServers.length > 0
         ? selectedMcpServers.map(serverId => ({
-            server_id: serverId,
-            selected_tools: mcpServerConfigs[serverId] || null
-          }))
+          server_id: serverId,
+          selected_tools: mcpServerConfigs[serverId] || null
+        }))
         : null,
       api_key: providerApiKey || ""  // Include API key if provided, empty string otherwise
     };
 
     try {
-      const url = isEditMode 
+      const url = isEditMode
         ? `http://localhost:8000/api/v1/agents/${editAgentId}`
         : 'http://localhost:8000/api/v1/agents/';
       const method = isEditMode ? 'PUT' : 'POST';
-      
+
       const response = await fetch(url, {
         method: method,
         headers: {
@@ -568,7 +579,7 @@ export function AgentBuilder() {
       if (response.ok) {
         const agent = await response.json();
         console.log(isEditMode ? "Agent updated successfully:" : "Agent created successfully:", agent);
-        
+
         // Create knowledge base if any knowledge is provided (text, links, or files)
         if (knowledgeText || knowledgeLinks || knowledgeFiles.length > 0) {
           try {
@@ -587,25 +598,25 @@ export function AgentBuilder() {
 
             if (kbResponse.ok) {
               const kb = await kbResponse.json();
-              
+
               // Add text documents (if provided)
               if (knowledgeText) {
                 const formData = new FormData();
                 formData.append('text', knowledgeText);
-                
+
                 await fetch(`http://localhost:8000/api/v1/knowledge-bases/${kb.kb_id}/documents/text`, {
                   method: 'POST',
                   body: formData,
                 });
               }
-              
+
               // Add URL documents (if provided)
               if (knowledgeLinks) {
                 const urls = knowledgeLinks.split('\n').filter(url => url.trim());
                 for (const url of urls) {
                   const formData = new FormData();
                   formData.append('url', url.trim());
-                  
+
                   await fetch(`http://localhost:8000/api/v1/knowledge-bases/${kb.kb_id}/documents/url`, {
                     method: 'POST',
                     body: formData,
@@ -624,17 +635,17 @@ export function AgentBuilder() {
                   });
                 }
               }
-              
+
               console.log("Knowledge base created successfully:", kb);
             }
           } catch (kbError) {
             console.error("Error creating knowledge base:", kbError);
           }
         }
-        
+
         toast({
           title: isEditMode ? "Agent Updated! 🎉" : "Agent Created! 🎉",
-          description: isEditMode 
+          description: isEditMode
             ? `${agentName} has been updated successfully`
             : `${agentName} configured with ${agentType} architecture and ID: ${agent.agent_id}`,
         });
@@ -654,17 +665,17 @@ export function AgentBuilder() {
         }
       } else {
         const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'string' 
-          ? errorData.detail 
+        const errorMessage = typeof errorData.detail === 'string'
+          ? errorData.detail
           : JSON.stringify(errorData.detail || errorData);
         throw new Error(errorMessage);
       }
     } catch (error: any) {
       console.error(isEditMode ? "Error updating agent:" : "Error creating agent:", error);
-      
+
       // Extract a meaningful error message
       let errorMessage = isEditMode ? "Failed to update agent. Please try again." : "Failed to create agent. Please try again.";
-      
+
       if (error.message) {
         // If it's a string, use it directly
         if (typeof error.message === 'string') {
@@ -678,7 +689,7 @@ export function AgentBuilder() {
           }
         }
       }
-      
+
       toast({
         title: isEditMode ? "Error Updating Agent" : "Error Creating Agent",
         description: errorMessage,
@@ -817,7 +828,7 @@ export function AgentBuilder() {
                   />
                 </div>
               </div>
-              
+
               {/* Real-time Model Fetching Section */}
               <div className="mt-4 p-3 bg-muted/50 rounded-md border border-border">
                 <div className="flex items-center gap-2 mb-2">
@@ -962,8 +973,8 @@ export function AgentBuilder() {
                       {tool.label}
                     </label>
                     {tool.requiresConfig && selectedToolsList.includes(tool.id) && (
-                      <Settings2 
-                        className="w-3.5 h-3.5 text-primary cursor-pointer hover:text-primary/80" 
+                      <Settings2
+                        className="w-3.5 h-3.5 text-primary cursor-pointer hover:text-primary/80"
                         onClick={(e) => {
                           e.stopPropagation();
                           setShowToolConfig(tool.id);
@@ -985,7 +996,7 @@ export function AgentBuilder() {
                 <h3 className="text-sm font-medium">MCP Servers</h3>
                 <span className="text-xs text-muted-foreground ml-auto">External Tool Integrations</span>
               </div>
-              
+
               {loadingMcpServers ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -1004,7 +1015,7 @@ export function AgentBuilder() {
                     </p>
                     <MCPServerModal onServerAdded={fetchMcpServers} />
                   </div>
-                  
+
                   <div className="space-y-3">
                     {mcpServers.filter(s => s.status === 'active').map(server => (
                       <div key={server.server_id} className="border border-border rounded-lg overflow-hidden">
@@ -1035,8 +1046,13 @@ export function AgentBuilder() {
                                 e.stopPropagation();
                                 handleDeleteMcpServer(server.server_id, server.name);
                               }}
+                              disabled={deletingServerId === server.server_id}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              {deletingServerId === server.server_id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
                             </Button>
                           </div>
                         </div>
@@ -1055,7 +1071,7 @@ export function AgentBuilder() {
                       </div>
                     ))}
                   </div>
-                  
+
                   {mcpServers.filter(s => s.status !== 'active').length > 0 && (
                     <div className="pt-3 border-t">
                       <p className="text-xs text-muted-foreground mb-2">Inactive Servers:</p>
@@ -1082,8 +1098,13 @@ export function AgentBuilder() {
                                     handleReconnectMcpServer(server.server_id, server.name);
                                   }}
                                   title="Retry connection"
+                                  disabled={reconnectingServerId === server.server_id}
                                 >
-                                  <RefreshCw className="w-3 h-3" />
+                                  {reconnectingServerId === server.server_id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <RefreshCw className="w-3 h-3" />
+                                  )}
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -1094,8 +1115,13 @@ export function AgentBuilder() {
                                     handleDeleteMcpServer(server.server_id, server.name);
                                   }}
                                   title="Delete server"
+                                  disabled={deletingServerId === server.server_id}
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  {deletingServerId === server.server_id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-3 h-3" />
+                                  )}
                                 </Button>
                               </div>
                             </div>
@@ -1109,7 +1135,7 @@ export function AgentBuilder() {
                       </div>
                     </div>
                   )}
-                  
+
                   {selectedMcpServers.length > 0 && (
                     <div className="pt-3 mt-3 border-t">
                       <p className="text-xs text-muted-foreground">
@@ -1117,7 +1143,7 @@ export function AgentBuilder() {
                       </p>
                     </div>
                   )}
-                  
+
                   <div className="pt-3 mt-3 border-t flex justify-center">
                     <MCPServerModal onServerAdded={fetchMcpServers} />
                   </div>
@@ -1131,7 +1157,7 @@ export function AgentBuilder() {
                 <Database className="w-4 h-4 text-muted-foreground" />
                 <h3 className="text-sm font-medium">Knowledge Base</h3>
               </div>
-              
+
               <div className="flex gap-2 mb-4">
                 <Button
                   type="button"
@@ -1239,7 +1265,7 @@ export function AgentBuilder() {
               <p className="text-xs text-muted-foreground mb-4">
                 Select which Personally Identifiable Information (PII) categories should be blocked/filtered from agent interactions. When PII types are selected, they will be filtered from user input, knowledge base content, conversation memory, and agent responses.
               </p>
-              
+
               {/* PII Strategy Selection */}
               <div className="mb-4 p-3 border border-border rounded-lg bg-background space-y-3">
                 <Label className="text-xs text-muted-foreground font-medium">PII Handling Strategy</Label>
@@ -1255,7 +1281,7 @@ export function AgentBuilder() {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
                 {PII_CATEGORIES.map(pii => (
                   <div
@@ -1279,7 +1305,7 @@ export function AgentBuilder() {
                     </div>
                   </div>
                 ))}
-                
+
                 {customPII.map(pii => (
                   <div
                     key={pii.id}
@@ -1456,7 +1482,7 @@ export function AgentBuilder() {
           </div>
         </div>
       </div>
-      
+
       {/* Tool Configuration Dialog */}
       {showToolConfig && (
         <ToolConfigDialog

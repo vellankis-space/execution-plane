@@ -67,6 +67,29 @@ class WorkflowService:
         
         return query.offset(skip).limit(limit).all()
 
+    async def count_active_workflows(self, tenant_id: Optional[str] = None) -> int:
+        """Count active workflows, optionally filtered by tenant"""
+        query = self.db.query(Workflow).filter(Workflow.is_active == True)
+        
+        # Apply tenant filter if provided
+        if tenant_id:
+            query = query.filter(Workflow.tenant_id == tenant_id)
+            
+        return query.count()
+
+    async def count_executions_in_time_range(self, start_time: datetime, end_time: datetime, tenant_id: Optional[str] = None) -> int:
+        """Count workflow executions within a time range, optionally filtered by tenant"""
+        query = self.db.query(WorkflowExecution).filter(
+            WorkflowExecution.created_at >= start_time,
+            WorkflowExecution.created_at <= end_time
+        )
+        
+        # Apply tenant filter if provided
+        if tenant_id:
+            query = query.filter(WorkflowExecution.tenant_id == tenant_id)
+            
+        return query.count()
+
     async def update_workflow(self, workflow_id: str, workflow_data: WorkflowUpdate, tenant_id: Optional[str] = None) -> Optional[Workflow]:
         """Update a workflow"""
         db_workflow = await self.get_workflow(workflow_id, tenant_id=tenant_id)
