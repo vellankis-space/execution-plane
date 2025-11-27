@@ -13,7 +13,8 @@ import {
     CheckCircle2,
     AlertCircle,
     Settings,
-    ChevronLeft
+    ChevronLeft,
+    Activity
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -25,7 +26,7 @@ interface WorkflowToolbarProps {
     isPaused: boolean;
     testMode: boolean;
     setTestMode: (mode: boolean) => void;
-    executionStatus?: "completed" | "failed" | "running" | "pending";
+    executionStatus?: "completed" | "failed" | "running" | "pending" | "paused";
     onExecute: () => void;
     onPause: () => void;
     onStop: () => void;
@@ -33,6 +34,8 @@ interface WorkflowToolbarProps {
     onExport: () => void;
     onImport: () => void;
     onClear: () => void;
+    showPerformance: boolean;
+    onTogglePerformance: () => void;
 }
 
 export function WorkflowToolbar({
@@ -51,6 +54,8 @@ export function WorkflowToolbar({
     onExport,
     onImport,
     onClear,
+    showPerformance,
+    onTogglePerformance,
 }: WorkflowToolbarProps) {
     const navigate = useNavigate();
 
@@ -83,22 +88,30 @@ export function WorkflowToolbar({
             </div>
 
             <div className="flex items-center gap-2">
-                <div className="flex items-center bg-muted/50 rounded-lg p-1 mr-2">
+                <div className="flex items-center bg-gradient-to-r from-slate-900/80 to-slate-800/80 border border-slate-700/50 rounded-xl p-1 mr-2 shadow-lg backdrop-blur-sm">
                     <Button
-                        variant={testMode ? "secondary" : "ghost"}
+                        variant={testMode ? "default" : "ghost"}
                         size="sm"
                         onClick={() => setTestMode(true)}
-                        className="h-7 text-xs"
+                        className={`h-8 px-4 text-xs font-medium transition-all duration-200 ${testMode
+                            ? "bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white shadow-md shadow-blue-500/30"
+                            : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                            }`}
                     >
-                        Test
+                        <CheckCircle2 className={`w-3.5 h-3.5 mr-1.5 ${testMode ? "animate-pulse" : ""}`} />
+                        Test Mode
                     </Button>
                     <Button
-                        variant={!testMode ? "secondary" : "ghost"}
+                        variant={!testMode ? "default" : "ghost"}
                         size="sm"
                         onClick={() => setTestMode(false)}
-                        className="h-7 text-xs"
+                        className={`h-8 px-4 text-xs font-medium transition-all duration-200 ${!testMode
+                            ? "bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white shadow-md shadow-emerald-500/30"
+                            : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                            }`}
                     >
-                        Prod
+                        <AlertCircle className={`w-3.5 h-3.5 mr-1.5 ${!testMode ? "animate-pulse" : ""}`} />
+                        Production
                     </Button>
                 </div>
 
@@ -124,6 +137,16 @@ export function WorkflowToolbar({
                         </Button>
                     </>
                 )}
+
+                <Button
+                    variant={showPerformance ? "secondary" : "ghost"}
+                    size="icon"
+                    onClick={onTogglePerformance}
+                    title="Performance Profile"
+                    className={showPerformance ? "bg-blue-500/10 text-blue-600 hover:bg-blue-500/20" : ""}
+                >
+                    <Activity className="w-4 h-4" />
+                </Button>
 
                 <div className="h-6 w-px bg-border/50 mx-2" />
 

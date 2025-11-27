@@ -30,8 +30,8 @@ async def get_dashboard_stats(db: Session = Depends(get_db)):
         # Get active workflows
         active_workflows = await workflow_service.count_active_workflows(tenant_id=tenant_id)
         
-        # Get executions today (UTC)
-        now = datetime.now(timezone.utc)
+        # Get executions today (Local Time)
+        now = datetime.now().astimezone()
         start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         

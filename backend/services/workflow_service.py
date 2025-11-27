@@ -7,15 +7,14 @@ import os
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import defaultdict
 
 from models.workflow import Workflow, WorkflowExecution, StepExecution
 from schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowExecutionCreate, StepExecutionCreate
 from services.agent_service import AgentService
 from services.error_handler import ErrorHandler, RetryPolicy, DEFAULT_RETRY_POLICY
-from services.alerting_service import AlertingService
-from services.cost_tracking_service import CostTrackingService
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -301,29 +300,55 @@ class WorkflowService:
             # Update status to completed
             execution = await self.update_workflow_execution_status(execution_id, "completed", output_data)
             
-            # Evaluate alert rules for completed execution
-            if execution:
-                try:
-                    alerting_service = AlertingService(self.db)
-                    await alerting_service.evaluate_alert_rules(execution)
-                except Exception as alert_error:
-                    logger.warning(f"Error evaluating alert rules: {str(alert_error)}")
+
             
         except Exception as e:
             # Update status to failed
             execution = await self.update_workflow_execution_status(execution_id, "failed", error_message=str(e))
             
-            # Evaluate alert rules for failed execution
-            if execution:
-                try:
-                    alerting_service = AlertingService(self.db)
-                    await alerting_service.evaluate_alert_rules(execution)
-                except Exception as alert_error:
-                    logger.warning(f"Error evaluating alert rules: {str(alert_error)}")
+
             
             raise e
             
         return await self.get_workflow_execution(execution_id)
+
+    def _validate_workflow_definition(self, workflow_definition: Dict[str, Any]):
+        """Validate workflow definition for missing dependencies and cycles"""
+        steps = workflow_definition.get("steps", [])
+        dependencies = workflow_definition.get("dependencies", {}) or {}
+        
+        step_ids = {step["id"] for step in steps}
+        
+        # Check for missing dependencies
+        for step_id, deps in dependencies.items():
+            if step_id in step_ids:
+                for dep in deps:
+                    if dep not in step_ids:
+                        raise ValueError(f"Step '{step_id}' depends on missing step '{dep}'")
+        
+        # Check for cycles
+        visited = set()
+        recursion_stack = set()
+        
+        def detect_cycle(node):
+            visited.add(node)
+            recursion_stack.add(node)
+            
+            for neighbor in dependencies.get(node, []):
+                if neighbor in step_ids:
+                    if neighbor not in visited:
+                        if detect_cycle(neighbor):
+                            return True
+                    elif neighbor in recursion_stack:
+                        return True
+            
+            recursion_stack.remove(node)
+            return False
+
+        for step_id in step_ids:
+            if step_id not in visited:
+                if detect_cycle(step_id):
+                    raise ValueError(f"Circular dependency detected involving step '{step_id}'")
 
     async def _execute_workflow_graph(self, workflow_definition: Dict[str, Any], 
                                     input_data: Dict[str, Any], execution_id: str) -> Dict[str, Any]:
@@ -331,6 +356,9 @@ class WorkflowService:
         steps = workflow_definition.get("steps", [])
         dependencies = workflow_definition.get("dependencies", {}) or {}
         conditions = workflow_definition.get("conditions", {}) or {}
+        
+        # Validate workflow definition
+        self._validate_workflow_definition(workflow_definition)
         
         # Create a mapping of step IDs to step definitions
         step_map = {step["id"]: step for step in steps}
@@ -384,7 +412,21 @@ class WorkflowService:
                     if step_id not in completed_steps and step_id not in failed_steps
                 ]
                 if remaining_steps:
-                    raise ValueError(f"Circular dependency or missing steps detected: {remaining_steps}")
+                    # Provide detailed diagnostics
+                    diagnostics = []
+                    for step_id in remaining_steps:
+                        step_deps = dependencies.get(step_id, [])
+                        unmet_deps = [dep for dep in step_deps if dep not in completed_steps]
+                        
+                        if unmet_deps:
+                            diagnostics.append(f"  - Step '{step_id}' is waiting for: {unmet_deps}")
+                        elif step_id in conditions:
+                            diagnostics.append(f"  - Step '{step_id}' condition not met")
+                        else:
+                            diagnostics.append(f"  - Step '{step_id}' has no dependencies but cannot execute (possible cycle)")
+                    
+                    error_msg = f"Workflow execution stuck. Unable to proceed with the following steps:\n" + "\n".join(diagnostics)
+                    raise ValueError(error_msg)
                 break
             
             # Log ready steps for monitoring
@@ -438,16 +480,16 @@ class WorkflowService:
                                  previous_results: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single step in the workflow"""
         step_id = step_definition["id"]
-        agent_id = step_definition["agent_id"]
+        step_type = step_definition.get("type", "agent")
         
         # Log step start
-        logger.info(f"Starting execution of step {step_id} with agent {agent_id}")
+        logger.info(f"Starting execution of step {step_id} ({step_type})")
         
         # Create step execution
         step_data = StepExecutionCreate(
             step_id=step_id,
             execution_id=execution_id,
-            agent_id=agent_id,
+            agent_id=step_definition.get("agent_id"), # Optional for non-agent steps
             input_data=context
         )
         await self.create_step_execution(step_data)
@@ -469,31 +511,54 @@ class WorkflowService:
         await self.update_step_execution_status(step_id, execution_id, "running")
         
         try:
-            # Prepare input for the agent based on step configuration
-            agent_input = self._prepare_agent_input(step_definition, context, previous_results)
+            # Handle different step types
+            output_data = {}
             
-            # Get retry policy from step definition or use default
-            retry_config = step_definition.get("retry_policy") or {}
-            retry_policy = RetryPolicy(
-                max_retries=retry_config.get("max_retries", DEFAULT_RETRY_POLICY.max_retries),
-                initial_delay=retry_config.get("initial_delay", DEFAULT_RETRY_POLICY.initial_delay),
-                max_delay=retry_config.get("max_delay", DEFAULT_RETRY_POLICY.max_delay),
-                exponential_base=retry_config.get("exponential_base", DEFAULT_RETRY_POLICY.exponential_base)
-            )
-            
-            # Execute the agent with retry logic
-            agent_service = AgentService(self.db)
-            start_time = time.time()
-            
-            async def execute_agent_with_context():
-                return await agent_service.execute_agent(agent_id, str(agent_input))
-            
-            agent_response = await ErrorHandler.retry_with_backoff(
-                execute_agent_with_context,
-                retry_policy
-            )
-            end_time = time.time()
-            
+            if step_type == "agent":
+                agent_id = step_definition.get("agent_id")
+                if not agent_id:
+                    raise ValueError(f"Agent step {step_id} missing agent_id")
+
+                # Prepare input for the agent based on step configuration
+                agent_input = self._prepare_agent_input(step_definition, context, previous_results)
+                
+                # Get retry policy from step definition or use default
+                retry_config = step_definition.get("retry_policy") or {}
+                retry_policy = RetryPolicy(
+                    max_retries=retry_config.get("max_retries", DEFAULT_RETRY_POLICY.max_retries),
+                    initial_delay=retry_config.get("initial_delay", DEFAULT_RETRY_POLICY.initial_delay),
+                    max_delay=retry_config.get("max_delay", DEFAULT_RETRY_POLICY.max_delay),
+                    exponential_base=retry_config.get("exponential_base", DEFAULT_RETRY_POLICY.exponential_base)
+                )
+                
+                # Execute the agent with retry logic
+                agent_service = AgentService(self.db)
+                
+                async def execute_agent_with_context():
+                    return await agent_service.execute_agent(agent_id, str(agent_input))
+                
+                agent_response = await ErrorHandler.retry_with_backoff(
+                    execute_agent_with_context,
+                    retry_policy
+                )
+                output_data = {"response": agent_response}
+                
+            elif step_type in ["start", "end", "display", "chat", "condition", "loop"]:
+                # Pass-through steps (for now)
+                # For start/end, we just pass the context
+                # For chat, we might need to handle input waiting, but for now just pass
+                output_data = {"data": context}
+                
+            elif step_type == "action":
+                # Basic action handling
+                action_type = step_definition.get("action_type", "custom")
+                output_data = {"action_executed": True, "type": action_type, "data": context}
+                
+            else:
+                # Unknown step type, just pass through
+                logger.warning(f"Unknown step type {step_type} for step {step_id}")
+                output_data = {"data": context}
+
             # Capture final resource metrics
             try:
                 process = psutil.Process(os.getpid())
@@ -526,14 +591,18 @@ class WorkflowService:
             # Update step status to completed
             await self.update_step_execution_status(
                 step_id, execution_id, "completed", 
-                output_data={"response": agent_response}
+                output_data=output_data
             )
             
             # Log successful completion
             logger.info(f"Step {step_id} completed successfully")
             
             # Return results for use by dependent steps
-            return {step_id: agent_response}
+            # For agent, we return the response. For others, we might want to return the whole output_data
+            if step_type == "agent":
+                return {step_id: output_data["response"]}
+            else:
+                return {step_id: output_data}
             
         except Exception as e:
             # Get detailed error information
@@ -818,3 +887,69 @@ class WorkflowService:
                 StepExecution.execution_id == execution_id
             ).all()
         return execution
+
+    async def save_frontend_execution_result(
+        self, 
+        workflow_id: str, 
+        execution_result: Dict[str, Any],
+        tenant_id: Optional[str] = None
+    ) -> WorkflowExecution:
+        """Save execution result from frontend WorkflowExecutionEngine"""
+        try:
+            # Create workflow execution record
+            execution_id = execution_result.get("executionId")
+            logger.info(f"Saving execution {execution_id} for workflow {workflow_id}")
+            
+            db_execution = WorkflowExecution(
+                execution_id=execution_id,
+                workflow_id=workflow_id,
+                status=execution_result.get("status"),
+                started_at=datetime.fromisoformat(execution_result.get("startTime").replace("Z", "+00:00")),
+                completed_at=datetime.fromisoformat(execution_result.get("endTime").replace("Z", "+00:00")) if execution_result.get("endTime") else None,
+                execution_time=execution_result.get("totalExecutionTime", 0) / 1000.0,  # Convert ms to seconds
+                input_data={},
+                output_data={},
+                created_at=datetime.now(timezone.utc),  # Explicitly set with timezone
+                tenant_id=tenant_id
+            )
+            
+            self.db.add(db_execution)
+            
+            # Create step execution records for each node
+            node_results = execution_result.get("nodeResults", [])
+            logger.info(f"Saving {len(node_results)} node results")
+            
+            for node_result in node_results:
+                db_step = StepExecution(
+                    step_id=node_result.get("nodeId"),
+                    execution_id=execution_id,
+                    agent_id="",  # Set empty string for non-agent nodes
+                    status="completed" if node_result.get("status") == "success" else node_result.get("status"),
+                    output_data=node_result.get("output"),
+                    error_message=node_result.get("error"),
+                    execution_time=node_result.get("executionTime", 0) / 1000.0,  # Convert ms to seconds
+                    started_at=datetime.fromisoformat(node_result.get("timestamp").replace("Z", "+00:00")),
+                    completed_at=datetime.fromisoformat(node_result.get("timestamp").replace("Z", "+00:00"))
+                )
+                self.db.add(db_step)
+            
+            # Set aggregate metrics
+            db_execution.step_count = len(node_results)
+            db_execution.success_count = len([n for n in node_results if n.get("status") == "success"])
+            db_execution.failure_count = len([n for n in node_results if n.get("status") == "error"])
+            
+            self.db.commit()
+            self.db.refresh(db_execution)
+            
+            logger.info(f"Successfully saved execution {execution_id}")
+            
+            # Load step executions
+            db_execution.step_executions = self.db.query(StepExecution).filter(
+                StepExecution.execution_id == execution_id
+            ).all()
+            
+            return db_execution
+        except Exception as e:
+            logger.error(f"Error saving frontend execution result: {str(e)}", exc_info=True)
+            self.db.rollback()
+            raise

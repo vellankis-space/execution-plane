@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from api.v1 import router as api_v1_router
 from core.config import settings
 from core.database import init_db, engine
-from services.tracing_service import setup_tracing
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -43,12 +43,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-if settings.ENABLE_TRACING:
-    # Setup distributed tracing
-    try:
-        setup_tracing(app, engine)
-    except Exception as e:
-        print(f"Warning: Could not setup tracing: {e}")
+
 
 # Add CORS middleware to allow frontend communication
 app.add_middleware(

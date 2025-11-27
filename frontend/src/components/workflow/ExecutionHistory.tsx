@@ -41,16 +41,28 @@ export function ExecutionHistory({ workflowId }: ExecutionHistoryProps) {
   }, [workflowId]);
 
   const loadExecutions = async () => {
+    console.log("[ExecutionHistory] Loading executions for workflow:", workflowId);
     try {
       const response = await fetch(
         `http://localhost:8000/api/v1/workflows/${workflowId}/executions`
       );
+      console.log("[ExecutionHistory] Response status:", response.status);
+
       if (response.ok) {
         const data = await response.json();
-        setExecutions(data);
+        console.log("[ExecutionHistory] Received data:", data);
+
+        // Ensure data is an array and sort by startTime descending
+        const validData = Array.isArray(data) ? data : [];
+        const sortedData = validData.sort((a: WorkflowExecutionResult, b: WorkflowExecutionResult) =>
+          new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+        );
+        console.log("[ExecutionHistory] Setting", sortedData.length, "executions");
+        setExecutions(sortedData);
       }
     } catch (error) {
-      console.error("Error loading executions:", error);
+      console.error("[ExecutionHistory] Error loading executions:", error);
+      setExecutions([]); // Fallback to empty array on error
     }
   };
 
@@ -117,9 +129,9 @@ export function ExecutionHistory({ workflowId }: ExecutionHistoryProps) {
               </p>
             </Card>
           ) : (
-            executions.map((execution) => (
+            executions.map((execution, index) => (
               <Card
-                key={execution.executionId}
+                key={`${execution.executionId}-${index}`}
                 className="p-4 hover:bg-muted/50 cursor-pointer transition-colors"
                 onClick={() => handleViewExecution(execution)}
               >
@@ -143,18 +155,18 @@ export function ExecutionHistory({ workflowId }: ExecutionHistoryProps) {
                             : "In progress"}
                         </span>
                         <span>
-                          {execution.nodeResults.length} nodes executed
+                          {(execution.nodeResults || []).length} nodes executed
                         </span>
-                        {execution.nodeResults.filter((n) => n.status === "error")
+                        {(execution.nodeResults || []).filter((n) => n.status === "error")
                           .length > 0 && (
-                          <span className="text-red-600">
-                            {
-                              execution.nodeResults.filter((n) => n.status === "error")
-                                .length
-                            }{" "}
-                            errors
-                          </span>
-                        )}
+                            <span className="text-red-600">
+                              {
+                                (execution.nodeResults || []).filter((n) => n.status === "error")
+                                  .length
+                              }{" "}
+                              errors
+                            </span>
+                          )}
                       </div>
                     </div>
                   </div>
@@ -199,8 +211,8 @@ export function ExecutionHistory({ workflowId }: ExecutionHistoryProps) {
           {selectedExecution && (
             <ScrollArea className="h-[500px] pr-4">
               <div className="space-y-4">
-                {selectedExecution.nodeResults.map((nodeResult) => (
-                  <Card key={nodeResult.nodeId} className="p-4">
+                {(selectedExecution.nodeResults || []).map((nodeResult, index) => (
+                  <Card key={`${nodeResult.nodeId}-${index}`} className="p-4">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-2">
                         {getStatusIcon(nodeResult.status)}

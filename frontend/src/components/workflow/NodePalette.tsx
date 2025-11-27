@@ -13,7 +13,11 @@ import {
   Monitor,
   Zap,
   Search,
-  GripVertical
+  GripVertical,
+  Clock,
+  Database,
+  Code2,
+  Layers,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -53,10 +57,17 @@ const nodeTypeConfigs: NodeTypeConfig[] = [
 
   // Logic
   {
+    type: "groupNode",
+    label: "Group",
+    icon: Layers,
+    description: "Visual container for nodes",
+    category: "logic",
+  },
+  {
     type: "conditionNode",
-    label: "If / Else",
+    label: "Condition / Switch",
     icon: GitBranch,
-    description: "Conditional branching",
+    description: "If/Else or multi-branch routing",
     category: "logic",
   },
   {
@@ -80,6 +91,48 @@ const nodeTypeConfigs: NodeTypeConfig[] = [
     label: "Custom Action",
     icon: Zap,
     description: "Run custom script/API",
+    category: "tool",
+  },
+  {
+    type: "httpRequestNode",
+    label: "HTTP Request",
+    icon: Zap,
+    description: "Make API calls",
+    category: "tool",
+  },
+  {
+    type: "databaseNode",
+    label: "Database",
+    icon: Database,
+    description: "Query database",
+    category: "tool",
+  },
+  {
+    type: "transformNode",
+    label: "Transform",
+    icon: Code2,
+    description: "Map & transform data",
+    category: "tool",
+  },
+  {
+    type: "filterNode",
+    label: "Filter",
+    icon: GitBranch,
+    description: "Filter data by rules",
+    category: "tool",
+  },
+  {
+    type: "mergeNode",
+    label: "Merge",
+    icon: GitBranch,
+    description: "Combine data streams",
+    category: "tool",
+  },
+  {
+    type: "delayNode",
+    label: "Delay",
+    icon: Clock,
+    description: "Wait or schedule",
     category: "tool",
   },
   {

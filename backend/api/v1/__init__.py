@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from . import agents, knowledge_base, workflows, monitoring, enhanced_monitoring, versioning, alerting, cost_tracking, auth, scheduling, audit, queue, templates, human_in_loop, a2a, mcp, credentials, webhooks, models, mcp_servers, dashboard
+from . import agents, knowledge_base, workflows, versioning, auth, scheduling, audit, queue, templates, human_in_loop, a2a, mcp, credentials, webhooks, models, mcp_servers, dashboard
 
 router = APIRouter()
 router.include_router(auth.router, prefix="/auth", tags=["authentication"])
@@ -10,16 +10,4 @@ router.include_router(knowledge_base.router, prefix="/knowledge-bases", tags=["k
 router.include_router(workflows.router, prefix="/workflows", tags=["workflows"])
 router.include_router(credentials.router, prefix="/credentials", tags=["credentials"])
 router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
-router.include_router(monitoring.router, prefix="/monitoring", tags=["monitoring"])
-router.include_router(enhanced_monitoring.router, prefix="/enhanced-monitoring", tags=["enhanced-monitoring"])
-router.include_router(versioning.router, prefix="/versioning", tags=["versioning"])
-router.include_router(alerting.router, prefix="/alerting", tags=["alerting"])
-router.include_router(cost_tracking.router, prefix="/cost-tracking", tags=["cost-tracking"])
-router.include_router(scheduling.router, prefix="/scheduling", tags=["scheduling"])
-router.include_router(audit.router, prefix="/audit", tags=["audit"])
-router.include_router(queue.router, prefix="/queue", tags=["queue"])
-router.include_router(templates.router, prefix="/templates", tags=["templates"])
-router.include_router(human_in_loop.router, prefix="/human-in-loop", tags=["human-in-loop"])
-router.include_router(a2a.router, prefix="/a2a", tags=["a2a"])
-router.include_router(mcp.router, prefix="/mcp", tags=["mcp"])
 router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])

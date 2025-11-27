@@ -23,6 +23,7 @@ import { transformWorkflowForBackend, validateWorkflow as validateWorkflowStruct
 import { WorkflowCanvas } from "./WorkflowCanvas";
 import { WorkflowToolbar } from "./WorkflowToolbar";
 import { NodeConfigPanel } from "./NodeConfigPanel";
+import { PerformancePanel } from "./PerformancePanel";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageSquare, Layers, Zap, Key, Clock, ChevronLeft, ChevronRight } from "lucide-react";
@@ -61,6 +62,7 @@ export function WorkflowBuilder() {
   // UI State
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [activeSidebarTab, setActiveSidebarTab] = useState<"nodes" | "triggers" | "credentials" | "history">("nodes");
+  const [showPerformance, setShowPerformance] = useState(false);
 
   // Load agents, credentials, and workflow
   useEffect(() => {
@@ -102,6 +104,32 @@ export function WorkflowBuilder() {
       console.error("Error loading credentials:", error);
     }
   };
+
+  // Update agent node labels when agents are loaded
+  useEffect(() => {
+    if (agents.length === 0 || nodes.length === 0) return;
+
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => {
+        if (node.type === "agentNode" && node.data.agent_id) {
+          // Check if label is generic/default
+          if (node.data.label === "Agent Task" || node.data.label === "AI Agent") {
+            const agent = agents.find(a => a.agent_id === node.data.agent_id);
+            if (agent) {
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  label: agent.name
+                }
+              };
+            }
+          }
+        }
+        return node;
+      })
+    );
+  }, [agents, nodes.length]); // Only run when agents load or node count changes (initial load)
 
   const loadWorkflow = async (id: string) => {
     try {
@@ -344,6 +372,24 @@ export function WorkflowBuilder() {
       return;
     }
 
+    // Auto-save workflow if it hasn't been saved yet (temporary ID)
+    if (workflowId.startsWith('workflow-')) {
+      if (!workflowName.trim()) {
+        toast({
+          title: "Save Required",
+          description: "Please save the workflow before executing",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Save the workflow first
+      await handleSaveWorkflow();
+
+      // Small delay to ensure state is updated
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
     setIsExecuting(true);
     setIsPaused(false);
 
@@ -370,6 +416,37 @@ export function WorkflowBuilder() {
       setExecutionEngine(engine);
       const result = await engine.execute();
       setCurrentExecution(result);
+
+      // Save execution to backend for history
+      console.log("[Execution History] Attempting to save execution:", {
+        workflowId,
+        executionId: result.executionId,
+        status: result.status,
+        nodeResultsCount: result.nodeResults?.length || 0
+      });
+
+      try {
+        const saveResponse = await fetch(`http://localhost:8000/api/v1/workflows/save-execution`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...result,
+            workflowId
+          }),
+        });
+
+        console.log("[Execution History] Save response status:", saveResponse.status);
+
+        if (saveResponse.ok) {
+          const savedData = await saveResponse.json();
+          console.log("[Execution History] Successfully saved execution:", savedData);
+        } else {
+          const errorText = await saveResponse.text();
+          console.error("[Execution History] Failed to save execution:", errorText);
+        }
+      } catch (error) {
+        console.error("[Execution History] Error saving execution to backend:", error);
+      }
 
       toast({
         title: "Execution Complete",
@@ -410,14 +487,52 @@ export function WorkflowBuilder() {
     }
   };
 
-  const handleNodeUpdate = (nodeId: string, status: string, output?: any) => {
+  const handleNodeUpdate = (nodeId: string, status: string, output?: any, executionTime?: number) => {
     setNodes((nds) =>
       nds.map((node) =>
         node.id === nodeId
-          ? { ...node, data: { ...node.data, status, lastOutput: output } }
+          ? {
+            ...node,
+            data: {
+              ...node.data,
+              status,
+              lastOutput: output,
+              executionTime: executionTime !== undefined ? executionTime : node.data.executionTime
+            }
+          }
           : node
       )
     );
+
+    // Update edge animations based on execution flow
+    if (status === "running") {
+      setEdges((eds) =>
+        eds.map((edge) => {
+          if (edge.target === nodeId) {
+            return {
+              ...edge,
+              animated: true,
+              style: { ...edge.style, stroke: '#10b981', strokeWidth: 3, opacity: 1 },
+            };
+          }
+          return edge;
+        })
+      );
+    } else if (status === "completed" || status === "failed") {
+      // Reset edges coming into this node to completed state (solid line, no animation)
+      setEdges((eds) =>
+        eds.map((edge) => {
+          if (edge.target === nodeId) {
+            return {
+              ...edge,
+              animated: false,
+              style: { ...edge.style, stroke: status === "completed" ? '#10b981' : '#ef4444', strokeWidth: 2, opacity: 0.5 },
+            };
+          }
+          return edge;
+        })
+      );
+    }
   };
 
   const handleExecutionUpdate = (result: WorkflowExecutionResult) => {
@@ -515,9 +630,18 @@ export function WorkflowBuilder() {
         onExport={exportWorkflow}
         onImport={importWorkflow}
         onClear={clearWorkflow}
+        showPerformance={showPerformance}
+        onTogglePerformance={() => setShowPerformance(!showPerformance)}
       />
 
       <div className="flex-1 flex overflow-hidden relative">
+        {showPerformance && (
+          <PerformancePanel
+            nodes={nodes}
+            executionResult={currentExecution}
+            onClose={() => setShowPerformance(false)}
+          />
+        )}
         {/* Activity Bar (Fixed Left Strip) */}
         <div className="w-14 border-r bg-muted/40 flex flex-col items-center py-4 gap-4 z-20">
           <Button

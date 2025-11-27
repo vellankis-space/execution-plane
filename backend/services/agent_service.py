@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 from services.memory_service import MemoryService
 from services.tools_service import ToolsService
-from services.cost_tracking_service import CostTrackingService
+
 from services.llm_service import LLMService
 from services.rate_limit_handler import RateLimitHandler, RateLimitError
 from services.fastmcp_manager import fastmcp_manager
@@ -52,8 +52,7 @@ class AgentService:
         # Initialize tools service for external tools
         self.tools_service = ToolsService()
         
-        # Initialize cost tracking service
-        self.cost_service = CostTrackingService(db)
+
         
         # Initialize LLM service (with LiteLLM support)
         self.llm_service = LLMService()
@@ -1051,29 +1050,6 @@ class AgentService:
                 else:
                     response_text = str(final_message)
                 
-                # Track cost (estimate based on input/output sizes)
-                # Rough estimation: ~4 characters per token
-                try:
-                    input_tokens = len(filtered_input) // 4
-                    output_tokens = len(response_text) // 4
-                    
-                    # Track API call
-                    await self.cost_service.track_api_call(
-                        provider=agent.llm_provider,
-                        model=agent.llm_model,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        agent_id=agent.agent_id,
-                        workflow_id=None,  # Will be set if called from workflow
-                        execution_id=None,  # Will be set if called from workflow
-                        call_type="chat",
-                        metadata={
-                            "agent_type": agent.agent_type,
-                            "estimated": True
-                        }
-                    )
-                except Exception as cost_error:
-                    logger.warning(f"Error tracking cost: {str(cost_error)}")
                 
                 return response_text
             except Exception as e:
