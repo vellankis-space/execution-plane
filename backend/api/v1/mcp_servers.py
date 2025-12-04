@@ -502,6 +502,7 @@ async def disconnect_mcp_server(
 async def get_mcp_server_tools(server_id: str, db: Session = Depends(get_db)):
     """
     Get available tools from an MCP server.
+    Automatically connects to the server if not already connected.
     """
     try:
         # Ensure server exists in DB
@@ -565,10 +566,36 @@ async def get_mcp_server_tools(server_id: str, db: Session = Depends(get_db)):
 
         # Attempt to connect/discover tools if not cached yet
         tools = await fastmcp_manager.get_tools(server_id)
+        
+        # If no tools cached, try to connect and fetch
         if not tools:
-            logger.info(f"Tools not cached for {server_id}. Triggering reconnection.")
-            await fastmcp_manager.connect_server(server_id)
-            tools = await fastmcp_manager.get_tools(server_id)
+            logger.info(f"Tools not cached for {server_id}. Triggering connection and tool discovery.")
+            connection_success = await fastmcp_manager.connect_server(server_id)
+            if connection_success:
+                tools = await fastmcp_manager.get_tools(server_id)
+                # Update server status in database
+                server.status = "active"
+                server.last_connected = datetime.now(timezone.utc)
+                server.last_error = None
+                db.commit()
+                logger.info(f"✓ Successfully connected to {server_id} and discovered {len(tools)} tools")
+            else:
+                # Get error details
+                status_info = await fastmcp_manager.get_server_status(server_id)
+                error_message = status_info.get("last_error", "Connection failed")
+                server.status = "error"
+                server.last_error = error_message
+                db.commit()
+                logger.warning(f"⚠ Failed to connect to {server_id}: {error_message}")
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "error": "MCP_SERVER_UNAVAILABLE",
+                        "message": error_message,
+                        "server_id": server_id,
+                        "server_name": server.name
+                    }
+                )
 
         return {"server_id": server_id, "tools": tools, "count": len(tools)}
     except Exception as e:

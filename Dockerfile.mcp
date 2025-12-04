@@ -1,0 +1,16 @@
+# Simple MCP Server Docker Image
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install required dependencies
+RUN pip install fastmcp
+
+# Create the MCP server script
+COPY mcp_server.py .
+
+# Expose the port (if needed for HTTP transport)
+EXPOSE 3000
+
+# Run the MCP server
+CMD ["python", "mcp_server.py"]

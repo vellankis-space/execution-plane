@@ -26,7 +26,7 @@ const MCPToolSelector: React.FC<MCPToolSelectorProps> = ({
     new Set(initialSelectedTools || [])
   );
   const [searchQuery, setSearchQuery] = useState('');
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true); // Always expanded by default
   const [selectAllTools, setSelectAllTools] = useState(
     initialSelectedTools === null || initialSelectedTools === undefined
   );
@@ -59,10 +59,10 @@ const MCPToolSelector: React.FC<MCPToolSelectorProps> = ({
       }
     };
 
-    if (isExpanded && tools.length === 0) {
+    if (tools.length === 0) {
       fetchTools();
     }
-  }, [serverId, isExpanded, selectAllTools]);
+  }, [serverId, selectAllTools]);
 
   // Filter tools based on search query
   const filteredTools = tools.filter(tool =>
@@ -198,6 +198,20 @@ const MCPToolSelector: React.FC<MCPToolSelectorProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Docker MCP Note */}
+              {serverName.includes('Docker') && (
+                <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800 mb-3">
+                  <p className="text-sm text-green-700 dark:text-green-300">
+                    <strong>Docker MCP Toolkit:</strong> This server runs Docker containers with MCP toolkits. 
+                    Select specific tools to limit resource usage, or use "Select All" for full access.
+                  </p>
+                  <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                    <strong>Tip:</strong> The Docker MCP Toolkit contains multiple specialized tool collections. 
+                    You can search for specific tools by name or description.
+                  </p>
+                </div>
+              )}
 
               {/* Tools List */}
               <div className="max-h-80 overflow-y-auto">
