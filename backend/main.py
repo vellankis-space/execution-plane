@@ -11,6 +11,14 @@ from core.database import init_db, engine
 async def lifespan(app: FastAPI):
     # Startup
     await init_db()
+
+    # Initialize Telemetry (OpenLLMetry)
+    try:
+        from services.telemetry_service import telemetry_service
+        telemetry_service.start()
+    except Exception as e:
+        print(f"Warning: Could not initialize telemetry: {e}")
+
     
     # Initialize workflow scheduler
     try:

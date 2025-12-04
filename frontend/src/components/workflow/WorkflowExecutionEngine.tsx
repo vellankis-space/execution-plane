@@ -240,6 +240,8 @@ export class WorkflowExecutionEngine {
     }
 
     // Call backend API to execute agent - FIXED: agent_id in URL path
+    // NOTE: We intentionally do NOT pass workflow_id here to keep agent traces separate
+    // Workflow metrics are derived from workflow_executions table, not from agent spans
     const response = await fetch(`http://localhost:8000/api/v1/agents/${agent_id}/execute`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

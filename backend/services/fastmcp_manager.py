@@ -4,6 +4,7 @@ Using FastMCP framework for robust MCP server/client management
 """
 import logging
 import asyncio
+import time
 from typing import Dict, Any, Optional, List, Tuple
 from anyio import ClosedResourceError
 from dataclasses import dataclass, field
@@ -16,6 +17,17 @@ import hashlib
 import shutil
 import os
 from contextlib import AsyncExitStack
+
+# Import OpenLLMetry decorators and telemetry service
+try:
+    from traceloop.sdk.decorators import tool as tool_decorator
+    TRACELOOP_ENABLED = True
+except ImportError:
+    def tool_decorator(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    TRACELOOP_ENABLED = False
 
 logger = logging.getLogger(__name__)
 
@@ -299,10 +311,27 @@ class FastMCPManager:
         if config.auth_type == "bearer" and config.auth_token:
             # Explicit bearer token configuration
             auth = config.auth_token
+            # FORCE: Add to headers to be absolutely sure
+            if not has_auth_header:
+                # Special handling for Browser Use MCP
+                if config.url and "api.browser-use.com" in config.url:
+                    headers["X-Browser-Use-API-Key"] = config.auth_token
+                    logger.info(f"✓ Added X-Browser-Use-API-Key header for {config.server_id}")
+                else:
+                    headers["Authorization"] = f"Bearer {config.auth_token}"
+                    logger.info(f"✓ Added Authorization header for {config.server_id}")
             logger.info(f"✓ Using bearer token authentication for {config.server_id} (explicit auth_type)")
         elif config.auth_token and not has_auth_header:
             # auth_token provided without auth_type - assume bearer
             auth = config.auth_token
+            # FORCE: Add to headers to be absolutely sure
+            # Special handling for Browser Use MCP
+            if config.url and "api.browser-use.com" in config.url:
+                headers["X-Browser-Use-API-Key"] = config.auth_token
+                logger.info(f"✓ Added X-Browser-Use-API-Key header for {config.server_id}")
+            else:
+                headers["Authorization"] = f"Bearer {config.auth_token}"
+                logger.info(f"✓ Added Authorization header for {config.server_id}")
             logger.info(f"✓ Using token authentication (assuming bearer) for {config.server_id}")
         elif has_auth_header:
             # Authorization header already in headers - no need for separate auth
@@ -595,7 +624,8 @@ class FastMCPManager:
             "server disconnected",
             "socket closed",
             "network error",
-            "remote end closed"
+            "remote end closed",
+            "client is not connected"
         ]
         return (
             isinstance(error, (ConnectionError, BrokenPipeError, OSError, IOError)) or
@@ -630,6 +660,17 @@ class FastMCPManager:
         # Check cache first
         cached = self._get_cached_result(server_id, tool_name, arguments)
         if cached is not None:
+            # Set telemetry attributes for cached result
+            try:
+                from services.telemetry_service import telemetry_service
+                current_span = telemetry_service.get_current_span()
+                if current_span and current_span.is_recording():
+                    current_span.set_attribute("tool.name", tool_name)
+                    current_span.set_attribute("tool.server_id", server_id)
+                    current_span.set_attribute("tool.cached", True)
+                    current_span.set_attribute("tool.success", True)
+            except Exception:
+                pass
             return cached
             
         logger.info(f"Executing tool {tool_name} on {server_id}")
@@ -664,10 +705,43 @@ class FastMCPManager:
             client = self.clients[server_id]
 
             try:
+                # Add OpenTelemetry tracing for tool execution
+                from services.telemetry_service import telemetry_service
+                
+                start_time = time.time()
+                
+                # Create span for tool execution
+                try:
+                    current_span = telemetry_service.get_current_span()
+                    if current_span and current_span.is_recording():
+                        # Set tool attributes
+                        current_span.set_attribute("tool.name", tool_name)
+                        current_span.set_attribute("tool.server_id", server_id)
+                        current_span.set_attribute("tool.server_name", self.servers[server_id].name if server_id in self.servers else "unknown")
+                        current_span.set_attribute("tool.input", json.dumps(arguments)[:1000])  # Limit size
+                        current_span.set_attribute("mcp.server_id", server_id)
+                        current_span.set_attribute("mcp.tool_name", tool_name)
+                except Exception as attr_error:
+                    logger.debug(f"Could not set tool attributes: {attr_error}")
+                
                 # ✅ CRITICAL: Use existing persistent connection!
                 # Client is already entered in connect_server
                 result = await client.call_tool(tool_name, arguments)
                 result_data = result.data if hasattr(result, 'data') else result
+                
+                # Calculate duration
+                duration_ms = (time.time() - start_time) * 1000
+                
+                # Set success attributes
+                try:
+                    current_span = telemetry_service.get_current_span()
+                    if current_span and current_span.is_recording():
+                        current_span.set_attribute("tool.success", True)
+                        current_span.set_attribute("tool.execution_time_ms", duration_ms)
+                        current_span.set_attribute("tool.output", json.dumps(result_data)[:1000])  # Limit size
+                        current_span.set_attribute("tool.cached", False)
+                except Exception as attr_error:
+                    logger.debug(f"Could not set success attributes: {attr_error}")
                 
                 # Success! Cache and return
                 self._cache_result(server_id, tool_name, arguments, result_data)
@@ -702,6 +776,11 @@ class FastMCPManager:
                     
                     await asyncio.sleep(wait_time)
 
+                # 0. Check for Auth Errors -> Fail Fast
+                if "401" in str(e) or "Unauthorized" in str(e):
+                    logger.error(f"Authentication failed for {server_id} during tool execution. This usually means the API key is invalid or has insufficient credits.")
+                    raise Exception(f"Authentication failed for {server_id}. Please check your API key and credits/quota.")
+
                 # 1. Check for Rate Limits -> Wait & Retry
                 if self._is_rate_limit_error(e):
                     await handle_retry_or_raise()
@@ -730,6 +809,12 @@ class FastMCPManager:
                 last_error = e
                 error_str = str(e)
                 
+                # Debug: Log response body if available
+                if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                    logger.error(f"Error response body from {server_id}: {e.response.text}")
+                if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                    logger.error(f"Error status code from {server_id}: {e.response.status_code}")
+
                 # Check for rate limit or timeout in generic exceptions
                 if self._is_rate_limit_error(e):
                     retry_after = self._extract_retry_after(e) or int(base_delay * (2 ** (attempt - 1)))

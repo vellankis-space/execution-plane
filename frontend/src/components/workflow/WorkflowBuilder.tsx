@@ -60,7 +60,7 @@ export function WorkflowBuilder() {
   const [chatInputResolver, setChatInputResolver] = useState<((value: string) => void) | null>(null);
 
   // UI State
-  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<"nodes" | "triggers" | "credentials" | "history">("nodes");
   const [showPerformance, setShowPerformance] = useState(false);
 
@@ -175,7 +175,7 @@ export function WorkflowBuilder() {
 
   const onConnect = useCallback(
     (params: Connection) => {
-      setEdges((eds) => addEdge({ ...params, type: "smoothstep", animated: true }, eds));
+      setEdges((eds) => addEdge({ ...params, type: "default" }, eds));
     },
     [setEdges]
   );
@@ -504,35 +504,35 @@ export function WorkflowBuilder() {
       )
     );
 
-    // Update edge animations based on execution flow
-    if (status === "running") {
-      setEdges((eds) =>
-        eds.map((edge) => {
-          if (edge.target === nodeId) {
-            return {
-              ...edge,
-              animated: true,
-              style: { ...edge.style, stroke: '#10b981', strokeWidth: 3, opacity: 1 },
-            };
-          }
-          return edge;
-        })
-      );
-    } else if (status === "completed" || status === "failed") {
-      // Reset edges coming into this node to completed state (solid line, no animation)
-      setEdges((eds) =>
-        eds.map((edge) => {
-          if (edge.target === nodeId) {
-            return {
-              ...edge,
-              animated: false,
-              style: { ...edge.style, stroke: status === "completed" ? '#10b981' : '#ef4444', strokeWidth: 2, opacity: 0.5 },
-            };
-          }
-          return edge;
-        })
-      );
-    }
+    // Update edge animations based on execution flow - DISABLED as per user request
+    // if (status === "running") {
+    //   setEdges((eds) =>
+    //     eds.map((edge) => {
+    //       if (edge.target === nodeId) {
+    //         return {
+    //           ...edge,
+    //           animated: true,
+    //           style: { ...edge.style, stroke: '#10b981', strokeWidth: 3, opacity: 1 },
+    //         };
+    //       }
+    //       return edge;
+    //     })
+    //   );
+    // } else if (status === "completed" || status === "failed") {
+    //   // Reset edges coming into this node to completed state (solid line, no animation)
+    //   setEdges((eds) =>
+    //     eds.map((edge) => {
+    //       if (edge.target === nodeId) {
+    //         return {
+    //           ...edge,
+    //           animated: false,
+    //           style: { ...edge.style, stroke: status === "completed" ? '#10b981' : '#ef4444', strokeWidth: 2, opacity: 0.5 },
+    //         };
+    //       }
+    //       return edge;
+    //     })
+    //   );
+    // }
   };
 
   const handleExecutionUpdate = (result: WorkflowExecutionResult) => {
@@ -642,128 +642,124 @@ export function WorkflowBuilder() {
             onClose={() => setShowPerformance(false)}
           />
         )}
-        {/* Activity Bar (Fixed Left Strip) */}
-        <div className="w-14 border-r bg-muted/40 flex flex-col items-center py-4 gap-4 z-20">
-          <Button
-            variant={activeSidebarTab === "nodes" && leftSidebarOpen ? "secondary" : "ghost"}
-            size="icon"
-            className="h-10 w-10 rounded-xl"
-            onClick={() => {
-              if (activeSidebarTab === "nodes" && leftSidebarOpen) {
-                setLeftSidebarOpen(false);
-              } else {
-                setActiveSidebarTab("nodes");
-                setLeftSidebarOpen(true);
-              }
-            }}
-            title="Components"
-          >
-            <Layers className="w-5 h-5" />
-          </Button>
-          <Button
-            variant={activeSidebarTab === "triggers" && leftSidebarOpen ? "secondary" : "ghost"}
-            size="icon"
-            className="h-10 w-10 rounded-xl"
-            onClick={() => {
-              if (activeSidebarTab === "triggers" && leftSidebarOpen) {
-                setLeftSidebarOpen(false);
-              } else {
+        {/* Sidebar Container (Activity Bar + Panel) */}
+        <div
+          className="flex z-30 h-full relative"
+          onMouseEnter={() => setLeftSidebarOpen(true)}
+          onMouseLeave={() => setLeftSidebarOpen(false)}
+        >
+          {/* Activity Bar (Fixed Left Strip) */}
+          <div className="w-14 border-r bg-muted/40 flex flex-col items-center py-4 gap-4 z-20 h-full bg-background">
+            <Button
+              variant={activeSidebarTab === "nodes" && leftSidebarOpen ? "secondary" : "ghost"}
+              size="icon"
+              className="h-10 w-10 rounded-xl"
+              onClick={() => {
+                if (activeSidebarTab === "nodes" && leftSidebarOpen) {
+                  // Optional: Click to pin? For now just keep selection
+                } else {
+                  setActiveSidebarTab("nodes");
+                  setLeftSidebarOpen(true);
+                }
+              }}
+              title="Components"
+            >
+              <Layers className="w-5 h-5" />
+            </Button>
+            <Button
+              variant={activeSidebarTab === "triggers" && leftSidebarOpen ? "secondary" : "ghost"}
+              size="icon"
+              className="h-10 w-10 rounded-xl"
+              onClick={() => {
                 setActiveSidebarTab("triggers");
                 setLeftSidebarOpen(true);
-              }
-            }}
-            title="Triggers"
-          >
-            <Zap className="w-5 h-5" />
-          </Button>
-          <Button
-            variant={activeSidebarTab === "credentials" && leftSidebarOpen ? "secondary" : "ghost"}
-            size="icon"
-            className="h-10 w-10 rounded-xl"
-            onClick={() => {
-              if (activeSidebarTab === "credentials" && leftSidebarOpen) {
-                setLeftSidebarOpen(false);
-              } else {
+              }}
+              title="Triggers"
+            >
+              <Zap className="w-5 h-5" />
+            </Button>
+            <Button
+              variant={activeSidebarTab === "credentials" && leftSidebarOpen ? "secondary" : "ghost"}
+              size="icon"
+              className="h-10 w-10 rounded-xl"
+              onClick={() => {
                 setActiveSidebarTab("credentials");
                 setLeftSidebarOpen(true);
-              }
-            }}
-            title="Credentials"
-          >
-            <Key className="w-5 h-5" />
-          </Button>
-          <Button
-            variant={activeSidebarTab === "history" && leftSidebarOpen ? "secondary" : "ghost"}
-            size="icon"
-            className="h-10 w-10 rounded-xl"
-            onClick={() => {
-              if (activeSidebarTab === "history" && leftSidebarOpen) {
-                setLeftSidebarOpen(false);
-              } else {
+              }}
+              title="Credentials"
+            >
+              <Key className="w-5 h-5" />
+            </Button>
+            <Button
+              variant={activeSidebarTab === "history" && leftSidebarOpen ? "secondary" : "ghost"}
+              size="icon"
+              className="h-10 w-10 rounded-xl"
+              onClick={() => {
                 setActiveSidebarTab("history");
                 setLeftSidebarOpen(true);
-              }
-            }}
-            title="History"
+              }}
+              title="History"
+            >
+              <Clock className="w-5 h-5" />
+            </Button>
+          </div>
+
+          {/* Side Panel (Collapsible Content - Overlay) */}
+          <div
+            className={`
+               absolute left-14 top-0 bottom-0
+               border-r bg-card flex flex-col transition-all duration-300 ease-in-out z-10 overflow-hidden shadow-2xl
+               ${leftSidebarOpen ? "w-72 opacity-100 translate-x-0" : "w-0 opacity-0 -translate-x-4 pointer-events-none"}
+             `}
           >
-            <Clock className="w-5 h-5" />
-          </Button>
-        </div>
+            {activeSidebarTab === "nodes" && <NodePalette />}
 
-        {/* Side Panel (Collapsible Content) */}
-        <div
-          className={`
-             border-r bg-card flex flex-col transition-all duration-300 ease-in-out z-10 overflow-hidden
-             ${leftSidebarOpen ? "w-72 opacity-100" : "w-0 opacity-0"}
-           `}
-        >
-          {activeSidebarTab === "nodes" && <NodePalette />}
-
-          {activeSidebarTab === "triggers" && (
-            <div className="flex flex-col h-full">
-              <div className="p-4 border-b border-border/50">
-                <h2 className="font-semibold text-sm">Triggers</h2>
-                <p className="text-xs text-muted-foreground mt-1">Configure when workflows run</p>
-              </div>
-              <ScrollArea className="flex-1">
-                <div className="p-4">
-                  <WorkflowTriggers
-                    workflowId={workflowId}
-                    triggers={triggers}
-                    onTriggersChange={setTriggers}
-                  />
+            {activeSidebarTab === "triggers" && (
+              <div className="flex flex-col h-full">
+                <div className="p-4 border-b border-border/50">
+                  <h2 className="font-semibold text-sm">Triggers</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Configure when workflows run</p>
                 </div>
-              </ScrollArea>
-            </div>
-          )}
-
-          {activeSidebarTab === "credentials" && (
-            <div className="flex flex-col h-full">
-              <div className="p-4 border-b border-border/50">
-                <h2 className="font-semibold text-sm">Credentials</h2>
-                <p className="text-xs text-muted-foreground mt-1">Manage API keys & tokens</p>
+                <ScrollArea className="flex-1">
+                  <div className="p-4">
+                    <WorkflowTriggers
+                      workflowId={workflowId}
+                      triggers={triggers}
+                      onTriggersChange={setTriggers}
+                    />
+                  </div>
+                </ScrollArea>
               </div>
-              <ScrollArea className="flex-1">
-                <div className="p-4">
-                  <CredentialsManager />
-                </div>
-              </ScrollArea>
-            </div>
-          )}
+            )}
 
-          {activeSidebarTab === "history" && (
-            <div className="flex flex-col h-full">
-              <div className="p-4 border-b border-border/50">
-                <h2 className="font-semibold text-sm">Execution History</h2>
-                <p className="text-xs text-muted-foreground mt-1">Past workflow runs</p>
-              </div>
-              <ScrollArea className="flex-1">
-                <div className="p-4">
-                  <ExecutionHistory workflowId={workflowId} />
+            {activeSidebarTab === "credentials" && (
+              <div className="flex flex-col h-full">
+                <div className="p-4 border-b border-border/50">
+                  <h2 className="font-semibold text-sm">Credentials</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Manage API keys & tokens</p>
                 </div>
-              </ScrollArea>
-            </div>
-          )}
+                <ScrollArea className="flex-1">
+                  <div className="p-4">
+                    <CredentialsManager />
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+
+            {activeSidebarTab === "history" && (
+              <div className="flex flex-col h-full">
+                <div className="p-4 border-b border-border/50">
+                  <h2 className="font-semibold text-sm">Execution History</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Past workflow runs</p>
+                </div>
+                <ScrollArea className="flex-1">
+                  <div className="p-4">
+                    <ExecutionHistory workflowId={workflowId} />
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Canvas Area */}

@@ -15,6 +15,22 @@ from schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowExecutionCr
 from services.agent_service import AgentService
 from services.error_handler import ErrorHandler, RetryPolicy, DEFAULT_RETRY_POLICY
 
+# Import OpenLLMetry decorators for comprehensive tracing
+try:
+    from traceloop.sdk.decorators import workflow, task
+    TRACELOOP_ENABLED = True
+except ImportError:
+    # Fallback no-op decorators if traceloop not installed
+    def workflow(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def task(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    TRACELOOP_ENABLED = False
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -228,6 +244,7 @@ class WorkflowService:
         
         return db_step
 
+    @workflow(name="workflow_execution")
     async def execute_workflow(self, workflow_id: str, input_data: Dict[str, Any], tenant_id: Optional[str] = None) -> WorkflowExecution:
         """Execute a workflow with the given input"""
         # Get the workflow (with tenant filtering)
@@ -262,8 +279,47 @@ class WorkflowService:
         try:
             # Parse workflow definition and execute steps
             workflow_definition = getattr(workflow, 'definition')
+            
+            # Add telemetry context for trace enrichment
+            try:
+                from services.trace_context import trace_context_manager
+                from services.telemetry_service import telemetry_service
+                
+                # Get current trace ID to register in context manager (Strategy 2 for SQLite exporter)
+                span = telemetry_service.get_current_span()
+                trace_id = None
+                if span:
+                    try:
+                        trace_id = format(span.get_span_context().trace_id, '032x')
+                    except Exception:
+                        pass
+                
+                # Context data
+                context_data = {
+                    "workflow_id": workflow_id,
+                    "workflow_name": workflow.name if hasattr(workflow, 'name') else None,
+                    "execution_id": execution_id,
+                    "tenant_id": tenant_id
+                }
+                
+                # 1. Set thread-local context (Strategy 1 - for same-thread access)
+                trace_context_manager.set_current_context(**context_data)
+                
+                # 2. Register trace_id context (Strategy 2 - for background thread exporter)
+                if trace_id:
+                    trace_context_manager.set_trace_context(trace_id, **context_data)
+                    logger.info(f"📊 Registered trace context for trace_id {trace_id}")
+                
+                # 3. Set attributes on current span and baggage (for propagation)
+                telemetry_service.set_span_attributes(**context_data)
+                
+                logger.info(f"📊 Set telemetry context for workflow {workflow_id}")
+            except Exception as e:
+                logger.error(f"Failed to set telemetry context: {e}", exc_info=True)
+            
+            # Start LangWatch trace if enabled
             start_time = time.time()
-            output_data = await self._execute_workflow_graph(workflow_definition, input_data, execution_id)
+            output_data = await self._execute_workflow_graph(workflow_definition, input_data, execution_id, workflow_id)
             end_time = time.time()
             
             # Capture final resource usage
@@ -351,7 +407,8 @@ class WorkflowService:
                     raise ValueError(f"Circular dependency detected involving step '{step_id}'")
 
     async def _execute_workflow_graph(self, workflow_definition: Dict[str, Any], 
-                                    input_data: Dict[str, Any], execution_id: str) -> Dict[str, Any]:
+                                    input_data: Dict[str, Any], execution_id: str,
+                                    workflow_id: str) -> Dict[str, Any]:
         """Execute workflow as a graph with support for parallel execution, conditional branching, and monitoring"""
         steps = workflow_definition.get("steps", [])
         dependencies = workflow_definition.get("dependencies", {}) or {}
@@ -438,7 +495,8 @@ class WorkflowService:
                 self._execute_single_step(
                     step_map[step_id], 
                     context, 
-                    execution_id, 
+                    execution_id,
+                    workflow_id,
                     step_results
                 ) 
                 for step_id in ready_steps
@@ -475,8 +533,11 @@ class WorkflowService:
         
         return context
 
+    
+    @task(name="workflow_step_execution")
     async def _execute_single_step(self, step_definition: Dict[str, Any], 
                                  context: Dict[str, Any], execution_id: str,
+                                 workflow_id: str,
                                  previous_results: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single step in the workflow"""
         step_id = step_definition["id"]
@@ -531,11 +592,16 @@ class WorkflowService:
                     exponential_base=retry_config.get("exponential_base", DEFAULT_RETRY_POLICY.exponential_base)
                 )
                 
-                # Execute the agent with retry logic
+                # Execute the agent with retry logic, passing workflow context
                 agent_service = AgentService(self.db)
                 
                 async def execute_agent_with_context():
-                    return await agent_service.execute_agent(agent_id, str(agent_input))
+                    return await agent_service.execute_agent(
+                        agent_id, 
+                        str(agent_input),
+                        workflow_id=workflow_id,
+                        workflow_execution_id=execution_id
+                    )
                 
                 agent_response = await ErrorHandler.retry_with_backoff(
                     execute_agent_with_context,

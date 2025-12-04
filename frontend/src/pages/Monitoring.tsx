@@ -1,12 +1,7 @@
-import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MonitoringDashboard } from "@/components/monitoring/MonitoringDashboard";
-import { ExecutionTimeline } from "@/components/monitoring/ExecutionTimeline";
-import { MetricsChart } from "@/components/monitoring/MetricsChart";
-import { SystemHealth } from "@/components/monitoring/SystemHealth";
-import { AlertManagement } from "@/components/monitoring/AlertManagement";
-import { CostTracking } from "@/components/monitoring/CostTracking";
-import { Activity } from "lucide-react";
+import { Activity, Server, GitBranch } from "lucide-react";
+import { MonitoringAgentView } from "@/components/monitoring/views/MonitoringAgentView";
+import { MonitoringWorkflowView } from "@/components/monitoring/views/MonitoringWorkflowView";
 
 export default function Monitoring() {
   return (
@@ -15,13 +10,13 @@ export default function Monitoring() {
       <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-30">
         <div className="container mx-auto px-8 py-6">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/25">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
               <Activity className="w-6 h-6 text-white" />
             </div>
             <div>
               <h1 className="text-2xl font-bold">Monitoring</h1>
               <p className="text-sm text-muted-foreground">
-                Real-time monitoring, metrics, and analytics for agents and workflows
+                Real-time health, performance, and cost metrics
               </p>
             </div>
           </div>
@@ -29,42 +24,30 @@ export default function Monitoring() {
       </div>
 
       <div className="container mx-auto px-8 py-8">
-        <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-6 bg-card/50 border border-border/50">
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="executions">Executions</TabsTrigger>
-            <TabsTrigger value="metrics">Metrics</TabsTrigger>
-            <TabsTrigger value="health">Health</TabsTrigger>
-            <TabsTrigger value="alerts">Alerts</TabsTrigger>
-            <TabsTrigger value="costs">Costs</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="dashboard" className="mt-6">
-            <MonitoringDashboard />
-          </TabsContent>
-          
-          <TabsContent value="executions" className="mt-6">
-            <ExecutionTimeline />
-          </TabsContent>
-          
-          <TabsContent value="metrics" className="mt-6">
-            <MetricsChart />
-          </TabsContent>
-          
-          <TabsContent value="health" className="mt-6">
-            <SystemHealth />
-          </TabsContent>
-          
-          <TabsContent value="alerts" className="mt-6">
-            <AlertManagement />
-          </TabsContent>
-          
-          <TabsContent value="costs" className="mt-6">
-            <CostTracking />
-          </TabsContent>
-        </Tabs>
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+          <Tabs defaultValue="agent-level" className="w-full">
+            <TabsList className="w-auto inline-flex bg-muted/50 border border-border/50">
+              <TabsTrigger value="agent-level" className="gap-2">
+                <Server className="w-4 h-4" />
+                Agent Level
+              </TabsTrigger>
+              <TabsTrigger value="workflow-level" className="gap-2">
+                <GitBranch className="w-4 h-4" />
+                Workflow Level
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="agent-level" className="mt-6">
+              <MonitoringAgentView />
+            </TabsContent>
+
+            <TabsContent value="workflow-level" className="mt-6">
+              <MonitoringWorkflowView />
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </div>
   );
 }
-

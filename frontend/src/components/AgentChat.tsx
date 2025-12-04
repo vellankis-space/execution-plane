@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, Loader2, Trash2, RefreshCw } from "lucide-react";
+import { Send, Bot, User, Loader2, Trash2, RefreshCw, Sparkles, ArrowUp } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { ToolCallLog } from "@/components/ToolCallLog";
+import { cn } from "@/lib/utils";
 
 interface ToolCall {
   id: string;
@@ -97,7 +97,10 @@ export function AgentChat() {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const scrollElement = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (scrollElement) {
+        scrollElement.scrollTop = scrollElement.scrollHeight;
+      }
     }
   }, [messages]);
 
@@ -369,210 +372,153 @@ export function AgentChat() {
   const selectedAgent = agents.find((a) => a.agent_id === selectedAgentId);
 
   return (
-    <div className="min-h-screen w-full bg-background">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <div className="flex flex-col gap-6">
-          {/* Header */}
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">Agent Chat</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Interact with your agents in real-time
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left Panel - Agent List */}
-            <div className="lg:col-span-1">
-              <Card className="p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">Your Agents</h2>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleRefreshAgents}
-                    disabled={isRefreshing}
-                  >
-                    <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                  </Button>
-                </div>
-
+    <div className="flex flex-col h-[calc(100vh-theme(spacing.16))] bg-background relative">
+      {/* Minimal Header with Agent Selector */}
+      <div className="w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 sticky top-0">
+        <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+              <SelectTrigger className="w-[240px] border-none shadow-none bg-transparent hover:bg-muted/50 focus:ring-0 font-medium text-lg px-2 transition-colors">
+                <SelectValue placeholder="Select Agent" />
+              </SelectTrigger>
+              <SelectContent>
                 {agents.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Bot className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground text-sm">
-                      No agents created yet
-                    </p>
-                  </div>
+                  <SelectItem value="none" disabled>No agents available</SelectItem>
                 ) : (
-                  <div className="space-y-3 max-h-[500px] overflow-y-auto">
-                    {agents.map((agent) => (
-                      <div
-                        key={agent.agent_id}
-                        className={`p-4 rounded-lg border cursor-pointer transition-all ${selectedAgentId === agent.agent_id
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:bg-muted/50"
-                          }`}
-                        onClick={() => setSelectedAgentId(agent.agent_id)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-medium text-base truncate">
-                              {agent.name}
-                            </h3>
-                            <p className="text-xs text-muted-foreground capitalize mt-1 truncate">
-                              {agent.agent_type}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1 truncate">
-                              {agent.llm_provider} / {agent.llm_model}
-                            </p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteAgent(agent.agent_id, agent.name);
-                            }}
-                            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-8 w-8 ml-2 flex-shrink-0"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
+                  agents.map((agent) => (
+                    <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                      <div className="flex items-center gap-2">
+                        <span>{agent.name}</span>
+                        <span className="text-xs text-muted-foreground ml-2">({agent.agent_type})</span>
                       </div>
-                    ))}
-                  </div>
+                    </SelectItem>
+                  ))
                 )}
-              </Card>
-            </div>
+              </SelectContent>
+            </Select>
+            {selectedAgent && (
+              <span className="text-xs text-muted-foreground border px-2 py-0.5 rounded-full bg-muted/30">
+                {selectedAgent.llm_model}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={handleRefreshAgents} className="text-muted-foreground hover:text-foreground">
+              <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
+            </Button>
+          </div>
+        </div>
+      </div>
 
-            {/* Right Panel - Chat Interface */}
-            <div className="lg:col-span-2 flex flex-col gap-6">
-              {/* Agent Selection - Mobile View */}
-              <Card className="p-4 lg:hidden">
-                <div className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <label className="text-xs text-muted-foreground mb-2 block">
-                      Select Agent
-                    </label>
-                    <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
-                      <SelectTrigger className="h-10 bg-background">
-                        <SelectValue placeholder="Choose an agent" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {agents.length === 0 ? (
-                          <SelectItem value="none" disabled>
-                            No agents available
-                          </SelectItem>
-                        ) : (
-                          agents.map((agent) => (
-                            <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                              {agent.name} ({agent.agent_type})
-                            </SelectItem>
-                          ))
+      {/* Chat Area */}
+      <ScrollArea className="flex-1" ref={scrollRef}>
+        <div className="max-w-3xl mx-auto px-4 py-8 min-h-full flex flex-col">
+          {messages.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6 opacity-0 animate-in fade-in duration-500 slide-in-from-bottom-4 fill-mode-forwards" style={{ animationDelay: '0.2s' }}>
+              <div className="w-24 h-24 rounded-3xl bg-primary/5 flex items-center justify-center shadow-inner">
+                <Sparkles className="w-10 h-10 text-primary/40" />
+              </div>
+              <div className="space-y-2 max-w-md">
+                <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+                  {selectedAgent ? `Chat with ${selectedAgent.name}` : "Select an Agent"}
+                </h2>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  {selectedAgent
+                    ? "I'm ready to help you with your tasks. Ask me anything!"
+                    : "Choose an agent from the top menu to start a conversation."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-8 pb-32">
+              {messages.map((message, index) => (
+                <div key={index} className={cn(
+                  "flex gap-4 w-full group",
+                  message.role === "user" ? "justify-end" : "justify-start"
+                )}>
+                  {/* Avatar for Assistant */}
+                  {message.role === "assistant" && (
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
+                      <Bot className="w-5 h-5 text-primary" />
+                    </div>
+                  )}
+
+                  <div className={cn(
+                    "flex flex-col max-w-[85%]",
+                    message.role === "user" ? "items-end" : "items-start"
+                  )}>
+                    {/* Tool Logs */}
+                    {(message.toolCalls || message.isThinking) && (
+                      <div className="mb-3 ml-1 w-full">
+                        <ToolCallLog toolCalls={message.toolCalls || []} isThinking={message.isThinking} />
+                      </div>
+                    )}
+
+                    {/* Content */}
+                    {(message.content || message.role === "user") && (
+                      <div className={cn(
+                        "relative px-5 py-3.5 text-sm leading-relaxed shadow-sm transition-all",
+                        message.role === "user"
+                          ? "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm"
+                          : "bg-muted/50 text-foreground rounded-2xl rounded-tl-sm border border-border/50 hover:bg-muted/70"
+                      )}>
+                        <div className="whitespace-pre-wrap">{message.content}</div>
+                        {message.isStreaming && (
+                          <span className="inline-block w-1.5 h-4 bg-current animate-pulse ml-1 align-middle" />
                         )}
-                      </SelectContent>
-                    </Select>
+                      </div>
+                    )}
+
+                    {/* Timestamp */}
+                    <span className={cn(
+                      "text-[10px] text-muted-foreground/40 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity",
+                      message.role === "user" ? "text-right" : "text-left"
+                    )}>
+                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
                   </div>
-                  {selectedAgent && (
-                    <div className="text-xs text-muted-foreground pt-6">
-                      Model: {selectedAgent.llm_model}
+
+                  {/* Avatar for User */}
+                  {message.role === "user" && (
+                    <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
+                      <User className="w-4 h-4 text-secondary-foreground" />
                     </div>
                   )}
                 </div>
-              </Card>
-
-              {/* Chat Interface */}
-              <Card className="flex flex-col h-[600px]">
-                {/* Messages */}
-                <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-                  {messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center">
-                      <Bot className="w-12 h-12 text-muted-foreground mb-4" />
-                      <p className="text-muted-foreground">
-                        {selectedAgentId
-                          ? "Start a conversation with your agent"
-                          : "Select an agent to begin"}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {messages.map((message, index) => (
-                        <div
-                          key={index}
-                          className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"
-                            }`}
-                        >
-                          {message.role === "assistant" && (
-                            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                              <Bot className="w-4 h-4 text-primary-foreground" />
-                            </div>
-                          )}
-                          <div className={`max-w-[80%] space-y-2 ${message.role === "user" ? "flex flex-col items-end" : ""}`}>
-                            {/* Tool Call Log */}
-                            {(message.toolCalls || message.isThinking) && (
-                              <ToolCallLog
-                                toolCalls={message.toolCalls || []}
-                                isThinking={message.isThinking}
-                              />
-                            )}
-
-                            {/* Message Content */}
-                            {(message.content || message.role === "user") && (
-                              <div
-                                className={`rounded-lg px-4 py-2 ${message.role === "user"
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-muted text-foreground"
-                                  }`}
-                              >
-                                <p className="text-sm whitespace-pre-wrap">
-                                  {message.content}
-                                  {message.isStreaming && (
-                                    <span className="inline-block w-1.5 h-4 bg-current animate-pulse ml-1 align-middle"></span>
-                                  )}
-                                </p>
-                                <p className="text-xs opacity-70 mt-1">
-                                  {message.timestamp.toLocaleTimeString()}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                          {message.role === "user" && (
-                            <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center flex-shrink-0">
-                              <User className="w-4 h-4 text-secondary-foreground" />
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </ScrollArea>
-
-                {/* Input */}
-                <div className="border-t border-border p-4">
-                  <div className="flex gap-2">
-                    <Input
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder={
-                        selectedAgentId
-                          ? "Type your message..."
-                          : "Select an agent first"
-                      }
-                      disabled={!selectedAgentId || isLoading}
-                      className="flex-1"
-                    />
-                    <Button
-                      onClick={handleSend}
-                      disabled={!selectedAgentId || !input.trim() || isLoading}
-                      size="icon"
-                    >
-                      <Send className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              </Card>
+              ))}
             </div>
+          )}
+        </div>
+      </ScrollArea>
+
+      {/* Floating Input Area */}
+      <div className="absolute bottom-6 left-0 right-0 px-4 z-20 pointer-events-none">
+        <div className="max-w-3xl mx-auto pointer-events-auto">
+          <div className="relative flex items-center gap-2 p-2 rounded-full border bg-background/80 backdrop-blur-xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 transition-all focus-within:ring-2 focus-within:ring-primary/20">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder={selectedAgentId ? "Type a message..." : "Select an agent to start..."}
+              className="flex-1 border-none shadow-none bg-transparent focus-visible:ring-0 px-4 py-6 h-12 text-base placeholder:text-muted-foreground/50"
+              disabled={!selectedAgentId || isLoading}
+            />
+            <Button
+              size="icon"
+              className={cn(
+                "rounded-full h-10 w-10 shrink-0 mr-1 transition-all duration-200",
+                input.trim() ? "opacity-100 scale-100" : "opacity-50 scale-95"
+              )}
+              onClick={handleSend}
+              disabled={!selectedAgentId || !input.trim() || isLoading}
+            >
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUp className="w-5 h-5" />}
+            </Button>
+          </div>
+          <div className="text-center mt-3">
+            <p className="text-[10px] text-muted-foreground/40 font-medium">
+              AI can make mistakes. Check important info.
+            </p>
           </div>
         </div>
       </div>

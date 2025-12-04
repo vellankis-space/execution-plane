@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -107,6 +108,7 @@ export function AgentBuilder() {
   const [customPII, setCustomPII] = useState<Array<{ id: string; label: string; description: string }>>([]);
   const [newPIILabel, setNewPIILabel] = useState("");
   const [newPIIDescription, setNewPIIDescription] = useState("");
+  const [newPIIPattern, setNewPIIPattern] = useState("");
   const [showCustomPIIForm, setShowCustomPIIForm] = useState(false);
   const [piiStrategy, setPIIStrategy] = useState<"redact" | "mask" | "hash" | "block">("redact");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -143,6 +145,7 @@ export function AgentBuilder() {
             setIsEditMode(true);
             setAgentName(agent.name || "");
             setAgentType(agent.agent_type || "react");
+            setAgentFramework(agent.agent_framework || "langgraph");
             setLlmProvider(agent.llm_provider || "anthropic");
             setLlmModel(agent.llm_model || "claude-sonnet-4-5");
             setTemperature([agent.temperature || 0.7]);
@@ -474,11 +477,13 @@ export function AgentBuilder() {
       {
         id: customId,
         label: newPIILabel.trim(),
-        description: newPIIDescription.trim() || "Custom PII category"
+        description: newPIIDescription.trim() || "Custom PII category",
+        pattern: newPIIPattern.trim() || generatePatternFromLabel(newPIILabel.trim())
       }
     ]);
     setNewPIILabel("");
     setNewPIIDescription("");
+    setNewPIIPattern("");
     setShowCustomPIIForm(false);
     toast({
       title: "Custom PII Added",
@@ -530,7 +535,7 @@ export function AgentBuilder() {
           id: pii.id,
           label: pii.label,
           description: pii.description,
-          pattern: generatePatternFromLabel(pii.label)
+          pattern: (pii as any).pattern || generatePatternFromLabel(pii.label)
         })),
         strategy: piiStrategy,
         apply_to_output: true,  // Always enable output filtering when PII types are selected
@@ -541,6 +546,7 @@ export function AgentBuilder() {
     const config = {
       name: agentName,
       agent_type: agentType,
+      agent_framework: agentFramework,
       llm_provider: llmProvider,
       llm_model: llmModel,
       temperature: temperature[0],
@@ -701,789 +707,648 @@ export function AgentBuilder() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-background">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
+    <div className="min-h-screen w-full bg-background pb-24">
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">{isEditMode ? 'Edit Agent' : 'Agent Playground'}</h1>
-            <p className="text-sm text-muted-foreground mt-1">{isEditMode ? 'Update your agent configuration' : 'Configure and orchestrate your AI agents'}</p>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">{isEditMode ? 'Edit Agent' : 'New Agent'}</h1>
+            <p className="text-muted-foreground mt-1 text-lg">
+              {isEditMode ? 'Refine your agent\'s capabilities' : 'Design your custom AI agent'}
+            </p>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <Button variant="outline" size="default" onClick={() => navigate('/')}>
-              <Home className="w-4 h-4 mr-2" />
-              Home
-            </Button>
-            <Button variant="outline" size="default" onClick={() => navigate('/chat')}>
-              <MessageSquare className="w-4 h-4 mr-2" />
-              Chat
-            </Button>
-            <Button variant="default" size="default" onClick={handleGenerateAgent} disabled={loading}>
-              {loading ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4 mr-2" />
-              )}
-              {loading ? 'Creating...' : (isEditMode ? 'Update Agent' : 'Generate Agent')}
+            <Button variant="ghost" onClick={() => navigate('/')}>
+              Cancel
             </Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Panel - System & Model Configuration */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Model Selection - Clean horizontal layout */}
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <div className="flex items-center gap-2 mb-4">
-                <Cpu className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Model</h3>
+        <Tabs defaultValue="general" className="w-full space-y-8">
+          <div className="sticky top-0 z-10 bg-background/95 backdrop-blur py-4 -mx-4 px-4 border-b mb-8">
+            <TabsList className="w-full justify-start h-auto p-1 bg-muted/50 rounded-full">
+              <TabsTrigger value="general" className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                <Brain className="w-4 h-4 mr-2" />
+                General
+              </TabsTrigger>
+              <TabsTrigger value="capabilities" className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                <Wrench className="w-4 h-4 mr-2" />
+                Capabilities
+              </TabsTrigger>
+              <TabsTrigger value="knowledge" className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                <Database className="w-4 h-4 mr-2" />
+                Knowledge
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="rounded-full px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                <Settings2 className="w-4 h-4 mr-2" />
+                Settings
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          {/* General Tab */}
+          <TabsContent value="general" className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="grid gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="agent-name" className="text-base font-medium">Name & Identity</Label>
+                <Input
+                  id="agent-name"
+                  placeholder="e.g. Research Assistant"
+                  value={agentName}
+                  onChange={(e) => setAgentName(e.target.value)}
+                  className="h-12 text-lg px-4 bg-muted/30 border-transparent focus:border-primary focus:bg-background transition-all"
+                />
               </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="provider" className="text-xs text-muted-foreground mb-2 block">Provider</Label>
-                  <Select value={llmProvider} onValueChange={handleProviderChange}>
-                    <SelectTrigger id="provider" className="h-9 bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LLM_PROVIDERS.map(provider => (
-                        <SelectItem key={provider.value} value={provider.value}>
-                          {provider.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+
+              <div className="space-y-2">
+                <Label htmlFor="system-prompt" className="text-base font-medium">System Instructions</Label>
+                <Textarea
+                  id="system-prompt"
+                  placeholder="You are a helpful AI assistant that..."
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  className="min-h-[200px] bg-muted/30 border-transparent focus:border-primary focus:bg-background resize-none text-base leading-relaxed p-4 transition-all"
+                />
+              </div>
+
+              <div className="p-6 rounded-xl bg-muted/30 border border-border/50 space-y-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Cpu className="w-5 h-5 text-primary" />
+                  <h3 className="font-medium text-lg">Model Configuration</h3>
                 </div>
 
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Label htmlFor="model" className="text-xs text-muted-foreground">
-                      Model {loadingModels && <span className="text-xs">(Loading...)</span>}
-                    </Label>
-                    {isUsingApiKey && (
-                      <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded">
-                        Live API
-                      </span>
-                    )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label>Provider</Label>
+                    <Select value={llmProvider} onValueChange={handleProviderChange}>
+                      <SelectTrigger className="h-10 bg-background border-border/50">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LLM_PROVIDERS.map(p => (
+                          <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <Select value={llmModel} onValueChange={setLlmModel} disabled={loadingModels || availableModels.length === 0}>
-                    <SelectTrigger id="model" className="h-9 bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[300px]">
-                      {availableModels.length > 0 ? (
-                        <>
-                          <div className="px-2 pb-1">
-                            <Input
-                              type="text"
-                              placeholder="Search models..."
-                              value={modelSearch}
-                              onChange={(e) => setModelSearch(e.target.value)}
-                              onKeyDown={(e) => e.stopPropagation()}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                          {filteredModels.length > 0 ? (
-                            filteredModels.map((model) => (
-                              <SelectItem key={model} value={model}>
-                                {model}
-                              </SelectItem>
-                            ))
-                          ) : (
-                            <SelectItem value="no-results" disabled>
-                              No models match "{modelSearch}"
-                            </SelectItem>
-                          )}
-                        </>
-                      ) : (
-                        <SelectItem value="loading" disabled>
-                          {loadingModels ? "Fetching models..." : "Enter API key to fetch models"}
-                        </SelectItem>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Model</Label>
+                      {isUsingApiKey && (
+                        <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded">
+                          Live API
+                        </span>
                       )}
-                    </SelectContent>
-                  </Select>
-                  {availableModels.length === 0 && !loadingModels && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Provide your {llmProvider} API key below and fetch models to continue
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Thermometer className="w-3.5 h-3.5 text-muted-foreground" />
-                    <Label htmlFor="temperature" className="text-xs text-muted-foreground">
-                      Temperature: {temperature[0].toFixed(1)}
-                    </Label>
+                    </div>
+                    <Select value={llmModel} onValueChange={setLlmModel} disabled={loadingModels || availableModels.length === 0}>
+                      <SelectTrigger className="h-10 bg-background border-border/50">
+                        <SelectValue placeholder={loadingModels ? "Loading..." : "Select model"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableModels.length > 0 ? (
+                          <>
+                            <div className="px-2 pb-1">
+                              <Input
+                                type="text"
+                                placeholder="Search models..."
+                                value={modelSearch}
+                                onChange={(e) => setModelSearch(e.target.value)}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                            {filteredModels.length > 0 ? (
+                              filteredModels.map((model) => (
+                                <SelectItem key={model} value={model}>
+                                  {model}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="no-results" disabled>
+                                No models match "{modelSearch}"
+                              </SelectItem>
+                            )}
+                          </>
+                        ) : (
+                          <SelectItem value="loading" disabled>
+                            {loadingModels ? "Fetching models..." : "Enter API key to fetch models"}
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <Slider
-                    id="temperature"
-                    min={0}
-                    max={2}
-                    step={0.1}
-                    value={temperature}
-                    onValueChange={setTemperature}
-                    className="mt-2"
-                  />
-                </div>
-              </div>
-
-              {/* Real-time Model Fetching Section */}
-              <div className="mt-4 p-3 bg-muted/50 rounded-md border border-border">
-                <div className="flex items-center gap-2 mb-2">
-                  <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Fetch Real-Time Models
-                    {isUsingApiKey && (
-                      <span className="ml-2 text-green-600">✓ Using API</span>
-                    )}
-                  </span>
                 </div>
 
-                <div className="space-y-2 mt-2">
-                  <Input
-                    type="password"
-                    placeholder={`Enter ${llmProvider} API key`}
-                    value={providerApiKey}
-                    onChange={(e) => setProviderApiKey(e.target.value)}
-                    className="h-8 bg-background text-xs"
-                  />
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full h-8 text-xs"
-                    onClick={fetchModels}
-                    disabled={loadingModels}
-                  >
-                    {loadingModels ? (
-                      <>
-                        <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                        Fetching...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="w-3 h-3 mr-1" />
-                        Fetch Latest Models
-                      </>
-                    )}
-                  </Button>
+                {/* Real-time Model Fetching Section */}
+                <div className="p-4 bg-background/50 rounded-lg border border-border/50 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Fetch Real-Time Models</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      placeholder={`Enter ${llmProvider} API key`}
+                      value={providerApiKey}
+                      onChange={(e) => setProviderApiKey(e.target.value)}
+                      className="h-9 bg-background text-sm flex-1"
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={fetchModels}
+                      disabled={loadingModels}
+                    >
+                      {loadingModels ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     Enter your API key to fetch the latest available models from {llmProvider}.
                   </p>
                 </div>
-              </div>
-            </div>
 
-            {/* System Prompt */}
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <div className="flex items-center gap-2 mb-3">
-                <FileText className="w-4 h-4 text-muted-foreground" />
-                <Label htmlFor="system-prompt" className="text-sm font-medium">System Instructions</Label>
-              </div>
-              <Textarea
-                id="system-prompt"
-                placeholder="You are a helpful AI assistant that..."
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                className="min-h-[120px] bg-background resize-none text-sm"
-              />
-            </div>
-
-            {/* Agent Configuration */}
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <div className="flex items-center gap-2 mb-4">
-                <Settings2 className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Agent Configuration</h3>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Box className="w-3.5 h-3.5 text-muted-foreground" />
-                    <Label htmlFor="agent-name" className="text-xs text-muted-foreground">Agent Name</Label>
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Creativity (Temperature): {temperature[0]}</Label>
                   </div>
-                  <Input
-                    id="agent-name"
-                    placeholder="ResearchAssistant"
-                    value={agentName}
-                    onChange={(e) => setAgentName(e.target.value)}
-                    className="h-9 bg-background"
+                  <Slider
+                    value={temperature}
+                    onValueChange={setTemperature}
+                    max={2}
+                    step={0.1}
+                    className="py-2"
                   />
                 </div>
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Layers className="w-3.5 h-3.5 text-muted-foreground" />
-                    <Label htmlFor="agent-type" className="text-xs text-muted-foreground">Architecture</Label>
-                  </div>
-                  <Select value={agentType} onValueChange={setAgentType}>
-                    <SelectTrigger id="agent-type" className="h-9 bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AGENT_TYPES.map(type => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <Brain className="w-3.5 h-3.5 text-muted-foreground" />
-                    <Label htmlFor="agent-framework" className="text-xs text-muted-foreground">Framework</Label>
-                  </div>
-                  <Select value={agentFramework} onValueChange={setAgentFramework}>
-                    <SelectTrigger id="agent-framework" className="h-9 bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AGENT_FRAMEWORKS.map(framework => (
-                        <SelectItem key={framework.value} value={framework.value}>
-                          {framework.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
             </div>
+          </TabsContent>
 
-            {/* Tools */}
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <div className="flex items-center gap-2 mb-4">
-                <Wrench className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Tools</h3>
-                <span className="text-xs text-muted-foreground ml-auto">Agent Capabilities</span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {TOOLS.map(tool => (
-                  <div
-                    key={tool.id}
-                    className="flex items-center space-x-2 p-2.5 rounded-md border border-border bg-background hover:bg-muted transition-colors cursor-pointer relative"
-                    onClick={() => handleToolsToggle(tool.id)}
-                  >
-                    <Checkbox
-                      id={tool.id}
-                      checked={selectedToolsList.includes(tool.id)}
-                      onCheckedChange={() => handleToolsToggle(tool.id)}
-                    />
-                    <label htmlFor={tool.id} className="text-xs cursor-pointer flex-1 leading-tight">
-                      {tool.icon && <span className="mr-1">{tool.icon}</span>}
-                      {tool.label}
-                    </label>
-                    {tool.requiresConfig && selectedToolsList.includes(tool.id) && (
-                      <Settings2
-                        className="w-3.5 h-3.5 text-primary cursor-pointer hover:text-primary/80"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowToolConfig(tool.id);
-                        }}
-                      />
-                    )}
-                    {tool.requiresConfig && !selectedToolsList.includes(tool.id) && (
-                      <Key className="w-3 h-3 text-muted-foreground" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+          {/* Capabilities Tab */}
+          <TabsContent value="capabilities" className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
+                  <Wrench className="w-5 h-5 text-primary" />
+                  Built-in Tools
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {TOOLS.map(tool => (
+                    <div
+                      key={tool.id}
+                      onClick={() => handleToolsToggle(tool.id)}
+                      className={`
+                        relative group cursor-pointer p-4 rounded-xl border transition-all duration-200
+                        ${selectedToolsList.includes(tool.id)
+                          ? 'bg-primary/5 border-primary shadow-sm'
+                          : 'bg-card border-border hover:border-primary/50 hover:shadow-sm'}
+                      `}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <span className="text-2xl">{tool.icon}</span>
+                        <Checkbox
+                          checked={selectedToolsList.includes(tool.id)}
+                          className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                        />
+                      </div>
+                      <p className="font-medium text-sm">{tool.label}</p>
 
-            {/* MCP Servers */}
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <div className="flex items-center gap-2 mb-4">
-                <Server className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">MCP Servers</h3>
-                <span className="text-xs text-muted-foreground ml-auto">External Tool Integrations</span>
-              </div>
-
-              {loadingMcpServers ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                      {tool.requiresConfig && selectedToolsList.includes(tool.id) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowToolConfig(tool.id);
+                          }}
+                        >
+                          <Settings2 className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ) : mcpServers.length === 0 ? (
-                <div className="text-center py-8">
-                  <Server className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground mb-3">No MCP servers configured</p>
-                  <MCPServerModal onServerAdded={fetchMcpServers} />
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs text-muted-foreground">
-                      Select servers and choose which tools to enable
-                    </p>
+              </div>
+
+              <div className="pt-6 border-t">
+                <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
+                  <Server className="w-5 h-5 text-primary" />
+                  MCP Servers
+                </h3>
+
+                {mcpServers.length === 0 ? (
+                  <div className="text-center py-12 bg-muted/30 rounded-xl border border-dashed">
+                    <Server className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                    <p className="text-muted-foreground mb-4">Connect external tools via MCP</p>
                     <MCPServerModal onServerAdded={fetchMcpServers} />
                   </div>
-
-                  <div className="space-y-3">
-                    {mcpServers.filter(s => s.status === 'active').map(server => (
-                      <div key={server.server_id} className="border border-border rounded-lg overflow-hidden">
-                        {/* Server Header with Checkbox */}
-                        <div className="flex items-center gap-3 p-3 bg-muted/30">
-                          <Checkbox
-                            id={server.server_id}
-                            checked={selectedMcpServers.includes(server.server_id)}
-                            onCheckedChange={() => handleMcpServerToggle(server.server_id)}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <label htmlFor={server.server_id} className="text-sm font-medium cursor-pointer block">
-                              {server.name}
-                            </label>
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                              {server.description || 'No description'}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {selectedMcpServers.includes(server.server_id) && (
-                              <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteMcpServer(server.server_id, server.name);
-                              }}
-                              disabled={deletingServerId === server.server_id}
-                            >
-                              {deletingServerId === server.server_id ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-4 h-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Tool Selector (shown when server is selected) */}
-                        {selectedMcpServers.includes(server.server_id) && (
-                          <div className="border-t border-border">
-                            <MCPToolSelector
-                              serverId={server.server_id}
-                              serverName={server.name}
-                              initialSelectedTools={mcpServerConfigs[server.server_id]}
-                              onToolsChange={(tools) => handleMcpToolsChange(server.server_id, tools)}
+                ) : (
+                  <div className="space-y-6">
+                    {/* Active Servers */}
+                    <div className="grid gap-4">
+                      {mcpServers.filter(s => s.status === 'active').map(server => (
+                        <div key={server.server_id} className="bg-card border rounded-xl overflow-hidden">
+                          <div className="flex items-center gap-4 p-4">
+                            <Checkbox
+                              checked={selectedMcpServers.includes(server.server_id)}
+                              onCheckedChange={() => handleMcpServerToggle(server.server_id)}
                             />
+                            <div className="flex-1">
+                              <h4 className="font-medium">{server.name}</h4>
+                              <p className="text-sm text-muted-foreground">{server.description}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-700">Active</span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteMcpServer(server.server_id, server.name);
+                                }}
+                                disabled={deletingServerId === server.server_id}
+                              >
+                                {deletingServerId === server.server_id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </div>
                           </div>
-                        )}
+
+                          {/* Tool Selector for Active Server */}
+                          {selectedMcpServers.includes(server.server_id) && (
+                            <div className="border-t bg-muted/10 p-4">
+                              <MCPToolSelector
+                                serverId={server.server_id}
+                                serverName={server.name}
+                                initialSelectedTools={mcpServerConfigs[server.server_id]}
+                                onToolsChange={(tools) => handleMcpToolsChange(server.server_id, tools)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Inactive Servers */}
+                    {mcpServers.filter(s => s.status !== 'active').length > 0 && (
+                      <div className="pt-4 border-t">
+                        <h4 className="text-sm font-medium text-muted-foreground mb-3">Inactive Servers</h4>
+                        <div className="grid gap-3">
+                          {mcpServers.filter(s => s.status !== 'active').map(server => (
+                            <div key={server.server_id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-yellow-200/50">
+                              <div className="flex items-center gap-3">
+                                <span className="font-medium text-sm">{server.name}</span>
+                                <span className="px-2 py-0.5 rounded text-xs bg-yellow-100 text-yellow-700">{server.status}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleReconnectMcpServer(server.server_id, server.name)}
+                                  disabled={reconnectingServerId === server.server_id}
+                                >
+                                  {reconnectingServerId === server.server_id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin mr-2" />
+                                  ) : (
+                                    <RefreshCw className="w-3 h-3 mr-2" />
+                                  )}
+                                  Reconnect
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                  onClick={() => handleDeleteMcpServer(server.server_id, server.name)}
+                                  disabled={deletingServerId === server.server_id}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-center mt-4">
+                      <MCPServerModal onServerAdded={fetchMcpServers} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Knowledge Tab */}
+          <TabsContent value="knowledge" className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="grid gap-6">
+              <div className="flex gap-2 p-1 bg-muted/30 rounded-lg w-fit">
+                <Button
+                  variant={knowledgeMode === "text" ? "secondary" : "ghost"}
+                  onClick={() => setKnowledgeMode("text")}
+                  size="sm"
+                >
+                  <Type className="w-4 h-4 mr-2" />
+                  Text
+                </Button>
+                <Button
+                  variant={knowledgeMode === "links" ? "secondary" : "ghost"}
+                  onClick={() => setKnowledgeMode("links")}
+                  size="sm"
+                >
+                  <Link2 className="w-4 h-4 mr-2" />
+                  Links
+                </Button>
+                <Button
+                  variant={knowledgeMode === "upload" ? "secondary" : "ghost"}
+                  onClick={() => setKnowledgeMode("upload")}
+                  size="sm"
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Files
+                </Button>
+              </div>
+
+              <div className="bg-card border rounded-xl p-6 min-h-[300px]">
+                {knowledgeMode === "text" && (
+                  <div className="space-y-4">
+                    <Label>Knowledge Text</Label>
+                    <Textarea
+                      placeholder="Paste documentation or context here..."
+                      value={knowledgeText}
+                      onChange={(e) => setKnowledgeText(e.target.value)}
+                      className="min-h-[200px] resize-none"
+                    />
+                  </div>
+                )}
+
+                {knowledgeMode === "links" && (
+                  <div className="space-y-4">
+                    <Label>External URLs</Label>
+                    <Textarea
+                      placeholder="https://..."
+                      value={knowledgeLinks}
+                      onChange={(e) => setKnowledgeLinks(e.target.value)}
+                      className="min-h-[200px] font-mono text-sm"
+                    />
+                  </div>
+                )}
+
+                {knowledgeMode === "upload" && (
+                  <div
+                    className="border-2 border-dashed rounded-xl h-[200px] flex flex-col items-center justify-center cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => setKnowledgeFiles(Array.from(e.target.files || []))}
+                    />
+                    <Upload className="w-10 h-10 text-muted-foreground mb-4" />
+                    <p className="font-medium">Drop files or click to upload</p>
+                    <p className="text-sm text-muted-foreground mt-1">PDF, TXT, MD, JSON</p>
+                    {knowledgeFiles.length > 0 && (
+                      <div className="mt-4 flex gap-2 flex-wrap justify-center">
+                        {knowledgeFiles.map((f, i) => (
+                          <span key={i} className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
+                            {f.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Settings Tab */}
+          <TabsContent value="settings" className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="grid gap-6">
+              <div className="p-6 rounded-xl border bg-card space-y-6">
+                <h3 className="font-medium text-lg flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-primary" />
+                  Guardrails & Privacy
+                </h3>
+
+                <div className="space-y-4">
+                  <Label>PII Handling</Label>
+                  <Select value={piiStrategy} onValueChange={(v: any) => setPIIStrategy(v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="redact">Redact (Replace with placeholder)</SelectItem>
+                      <SelectItem value="mask">Mask (****1234)</SelectItem>
+                      <SelectItem value="hash">Hash (SHA-256)</SelectItem>
+                      <SelectItem value="block">Block Request</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    {PII_CATEGORIES.map(pii => (
+                      <div key={pii.id} className="flex items-center gap-2 p-3 border rounded-lg hover:bg-muted/50 transition-colors">
+                        <Checkbox
+                          checked={blockedPII.includes(pii.id)}
+                          onCheckedChange={() => handlePIIToggle(pii.id)}
+                        />
+                        <div className="text-sm">
+                          <p className="font-medium">{pii.label}</p>
+                          <p className="text-xs text-muted-foreground">{pii.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Custom PII Categories */}
+                    {customPII.map(pii => (
+                      <div key={pii.id} className="flex items-center gap-2 p-3 border border-primary/30 bg-primary/5 rounded-lg">
+                        <Checkbox
+                          checked={blockedPII.includes(pii.id)}
+                          onCheckedChange={() => handlePIIToggle(pii.id)}
+                        />
+                        <div className="flex-1 text-sm">
+                          <p className="font-medium">{pii.label}</p>
+                          <p className="text-xs text-muted-foreground">{pii.description}</p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          onClick={() => {
+                            setCustomPII(prev => prev.filter(p => p.id !== pii.id));
+                            setBlockedPII(prev => prev.filter(id => id !== pii.id));
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
                       </div>
                     ))}
                   </div>
 
-                  {mcpServers.filter(s => s.status !== 'active').length > 0 && (
-                    <div className="pt-3 border-t">
-                      <p className="text-xs text-muted-foreground mb-2">Inactive Servers:</p>
-                      <div className="space-y-2">
-                        {mcpServers.filter(s => s.status !== 'active').map(server => (
-                          <div
-                            key={server.server_id}
-                            className="flex flex-col gap-2 p-3 rounded-md bg-muted/50 border border-yellow-200 dark:border-yellow-900/30"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium text-foreground">{server.name}</span>
-                                <span className="text-xs px-2 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
-                                  {server.status}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 text-muted-foreground hover:text-blue-600"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleReconnectMcpServer(server.server_id, server.name);
-                                  }}
-                                  title="Retry connection"
-                                  disabled={reconnectingServerId === server.server_id}
-                                >
-                                  {reconnectingServerId === server.server_id ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                  ) : (
-                                    <RefreshCw className="w-3 h-3" />
-                                  )}
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteMcpServer(server.server_id, server.name);
-                                  }}
-                                  title="Delete server"
-                                  disabled={deletingServerId === server.server_id}
-                                >
-                                  {deletingServerId === server.server_id ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="w-3 h-3" />
-                                  )}
-                                </Button>
-                              </div>
-                            </div>
-                            {server.last_error && (
-                              <div className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">
-                                <span className="font-medium">Error:</span> {server.last_error}
-                              </div>
-                            )}
+                  {/* Add Custom PII Form */}
+                  <div className="pt-4 border-t">
+                    {showCustomPIIForm ? (
+                      <div className="p-4 bg-muted/30 rounded-lg space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Category Name</Label>
+                            <Input
+                              value={newPIILabel}
+                              onChange={(e) => setNewPIILabel(e.target.value)}
+                              placeholder="e.g. License Plate"
+                              className="h-8"
+                            />
                           </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Description</Label>
+                            <Input
+                              value={newPIIDescription}
+                              onChange={(e) => setNewPIIDescription(e.target.value)}
+                              placeholder="Optional description"
+                              className="h-8"
+                            />
+                          </div>
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-xs">Regex Pattern (Optional)</Label>
+                            <Input
+                              value={newPIIPattern}
+                              onChange={(e) => setNewPIIPattern(e.target.value)}
+                              placeholder="e.g. ^[A-Z]{3}-\d{3}$ (Leave empty to auto-generate)"
+                              className="h-8 font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={handleAddCustomPII} className="flex-1">Add Category</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setShowCustomPIIForm(false)}>Cancel</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button variant="outline" size="sm" className="w-full" onClick={() => setShowCustomPIIForm(true)}>
+                        <Plus className="w-3 h-3 mr-2" />
+                        Add Custom PII Category
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 rounded-xl border bg-card space-y-6">
+                <h3 className="font-medium text-lg flex items-center gap-2">
+                  <Cpu className="w-5 h-5 text-primary" />
+                  Advanced Execution
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label>Architecture</Label>
+                    <Select value={agentType} onValueChange={setAgentType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AGENT_TYPES.map(t => (
+                          <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                         ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedMcpServers.length > 0 && (
-                    <div className="pt-3 mt-3 border-t">
-                      <p className="text-xs text-muted-foreground">
-                        {selectedMcpServers.length} MCP server(s) selected. Their tools will be available to this agent.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="pt-3 mt-3 border-t flex justify-center">
-                    <MCPServerModal onServerAdded={fetchMcpServers} />
+                      </SelectContent>
+                    </Select>
                   </div>
-                </div>
-              )}
-            </div>
 
-            {/* Knowledge Base */}
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <div className="flex items-center gap-2 mb-4">
-                <Database className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Knowledge Base</h3>
-              </div>
-
-              <div className="flex gap-2 mb-4">
-                <Button
-                  type="button"
-                  variant={knowledgeMode === "text" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setKnowledgeMode("text")}
-                  className="flex-1"
-                >
-                  <Type className="w-3.5 h-3.5 mr-1.5" />
-                  Text
-                </Button>
-                <Button
-                  type="button"
-                  variant={knowledgeMode === "links" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setKnowledgeMode("links")}
-                  className="flex-1"
-                >
-                  <Link2 className="w-3.5 h-3.5 mr-1.5" />
-                  Links
-                </Button>
-                <Button
-                  type="button"
-                  variant={knowledgeMode === "upload" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setKnowledgeMode("upload")}
-                  className="flex-1"
-                >
-                  <Upload className="w-3.5 h-3.5 mr-1.5" />
-                  Upload
-                </Button>
-              </div>
-
-              {knowledgeMode === "text" && (
-                <div>
-                  <Label htmlFor="knowledge-text" className="text-xs text-muted-foreground mb-2 block">
-                    Paste your text or documentation
-                  </Label>
-                  <Textarea
-                    id="knowledge-text"
-                    placeholder="Add context, documentation, or any information the agent should know..."
-                    value={knowledgeText}
-                    onChange={(e) => setKnowledgeText(e.target.value)}
-                    className="min-h-[100px] bg-background resize-none text-sm"
-                  />
-                </div>
-              )}
-
-              {knowledgeMode === "links" && (
-                <div>
-                  <Label htmlFor="knowledge-links" className="text-xs text-muted-foreground mb-2 block">
-                    Add URLs (one per line)
-                  </Label>
-                  <Textarea
-                    id="knowledge-links"
-                    placeholder="https://docs.example.com&#x0A;https://github.com/repo&#x0A;https://blog.example.com/article"
-                    value={knowledgeLinks}
-                    onChange={(e) => setKnowledgeLinks(e.target.value)}
-                    className="min-h-[100px] bg-background resize-none text-sm font-mono"
-                  />
-                </div>
-              )}
-
-              {knowledgeMode === "upload" && (
-                <div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept=".pdf,.docx,.txt,.md,.html,.htm,.json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const files = e.target.files ? Array.from(e.target.files) : [];
-                      setKnowledgeFiles(files);
-                    }}
-                  />
-                  <div
-                    className="border-2 border-dashed border-border rounded-lg p-6 bg-background hover:bg-muted/50 transition-colors cursor-pointer"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <div className="flex flex-col items-center justify-center gap-2 text-center">
-                      <Upload className="w-8 h-8 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">Click to select files</p>
-                        <p className="text-xs text-muted-foreground mt-1">PDF, DOCX, TXT, MD, HTML, JSON</p>
-                      </div>
-                    </div>
+                  <div className="space-y-2">
+                    <Label>Framework</Label>
+                    <Select value={agentFramework} onValueChange={setAgentFramework}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AGENT_FRAMEWORKS.map(f => (
+                          <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  {knowledgeFiles.length > 0 && (
-                    <div className="mt-3 text-xs text-muted-foreground">
-                      {knowledgeFiles.length} file(s) selected: {knowledgeFiles.map(f => f.name).join(", ")}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
 
-            {/* PII Configuration */}
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <div className="flex items-center gap-2 mb-4">
-                <Shield className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">PII Controls</h3>
-                <span className="text-xs text-muted-foreground ml-auto">Privacy Settings</span>
-              </div>
-              <p className="text-xs text-muted-foreground mb-4">
-                Select which Personally Identifiable Information (PII) categories should be blocked/filtered from agent interactions. When PII types are selected, they will be filtered from user input, knowledge base content, conversation memory, and agent responses.
-              </p>
-
-              {/* PII Strategy Selection */}
-              <div className="mb-4 p-3 border border-border rounded-lg bg-background space-y-3">
-                <Label className="text-xs text-muted-foreground font-medium">PII Handling Strategy</Label>
-                <Select value={piiStrategy} onValueChange={(val) => setPIIStrategy(val as any)}>
-                  <SelectTrigger className="h-9 bg-card">
-                    <SelectValue placeholder="Select strategy" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="redact">Redact - Replace with [REDACTED_TYPE]</SelectItem>
-                    <SelectItem value="mask">Mask - Show last 4 characters (****1234)</SelectItem>
-                    <SelectItem value="hash">Hash - Deterministic hash</SelectItem>
-                    <SelectItem value="block">Block - Prevent request if PII detected</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
-                {PII_CATEGORIES.map(pii => (
-                  <div
-                    key={pii.id}
-                    className="flex items-start space-x-3 p-3 rounded-md border border-border bg-background hover:bg-muted transition-colors cursor-pointer"
-                    onClick={() => handlePIIToggle(pii.id)}
-                  >
-                    <Checkbox
-                      id={pii.id}
-                      checked={blockedPII.includes(pii.id)}
-                      onCheckedChange={() => handlePIIToggle(pii.id)}
-                      className="mt-0.5"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <label htmlFor={pii.id} className="text-xs font-medium cursor-pointer block">
-                        {pii.label}
-                      </label>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {pii.description}
-                      </p>
-                    </div>
+                  <div className="space-y-2">
+                    <Label>Memory Type</Label>
+                    <Select value={memoryType} onValueChange={setMemoryType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MEMORY_TYPES.map(t => (
+                          <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                ))}
 
-                {customPII.map(pii => (
-                  <div
-                    key={pii.id}
-                    className="flex items-start space-x-3 p-3 rounded-md border border-primary/50 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer"
-                    onClick={() => handlePIIToggle(pii.id)}
-                  >
-                    <Checkbox
-                      id={pii.id}
-                      checked={blockedPII.includes(pii.id)}
-                      onCheckedChange={() => handlePIIToggle(pii.id)}
-                      className="mt-0.5"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <label htmlFor={pii.id} className="text-xs font-medium cursor-pointer block">
-                        {pii.label}
-                      </label>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {pii.description}
-                      </p>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCustomPII(prev => prev.filter(p => p.id !== pii.id));
-                        setBlockedPII(prev => prev.filter(id => id !== pii.id));
-                      }}
-                      className="text-muted-foreground hover:text-destructive transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              {showCustomPIIForm ? (
-                <div className="mt-4 p-4 border border-border rounded-lg bg-background space-y-3">
-                  <div>
-                    <Label htmlFor="custom-pii-label" className="text-xs text-muted-foreground mb-1.5 block">
-                      PII Category Name
-                    </Label>
+                  <div className="space-y-2">
+                    <Label>Max Iterations</Label>
                     <Input
-                      id="custom-pii-label"
-                      placeholder="e.g., License Number"
-                      value={newPIILabel}
-                      onChange={(e) => setNewPIILabel(e.target.value)}
-                      className="h-9 bg-card"
+                      type="number"
+                      value={maxIterations}
+                      onChange={(e) => setMaxIterations(e.target.value)}
                     />
                   </div>
-                  <div>
-                    <Label htmlFor="custom-pii-desc" className="text-xs text-muted-foreground mb-1.5 block">
-                      Description (Optional)
-                    </Label>
+
+                  <div className="space-y-2">
+                    <Label>Recursion Limit</Label>
                     <Input
-                      id="custom-pii-desc"
-                      placeholder="e.g., Driver's license numbers"
-                      value={newPIIDescription}
-                      onChange={(e) => setNewPIIDescription(e.target.value)}
-                      className="h-9 bg-card"
+                      type="number"
+                      value={recursionLimit}
+                      onChange={(e) => setRecursionLimit(e.target.value)}
                     />
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleAddCustomPII}
-                      className="flex-1"
-                    >
-                      Add Category
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setShowCustomPIIForm(false);
-                        setNewPIILabel("");
-                        setNewPIIDescription("");
-                      }}
-                    >
-                      Cancel
-                    </Button>
+
+                  <div className="flex items-center justify-between p-3 border rounded-lg">
+                    <Label>Human in the Loop</Label>
+                    <Switch checked={humanInLoop} onCheckedChange={setHumanInLoop} />
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 border rounded-lg">
+                    <Label>Enable Streaming</Label>
+                    <Switch checked={streamingEnabled} onCheckedChange={setStreamingEnabled} />
                   </div>
                 </div>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowCustomPIIForm(true)}
-                  className="mt-4 w-full"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1.5" />
-                  Add Custom PII Category
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/* Right Panel - Advanced Settings and Agent List */}
-          <div className="space-y-6">
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <div className="flex items-center gap-2 mb-4">
-                <Hash className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Execution Settings</h3>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="max-iter" className="text-xs text-muted-foreground mb-2 block">Max Iterations</Label>
-                  <Input
-                    id="max-iter"
-                    type="number"
-                    min="1"
-                    value={maxIterations}
-                    onChange={(e) => setMaxIterations(e.target.value)}
-                    className="h-9 bg-background"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="recursion" className="text-xs text-muted-foreground mb-2 block">Recursion Limit</Label>
-                  <Input
-                    id="recursion"
-                    type="number"
-                    min="1"
-                    value={recursionLimit}
-                    onChange={(e) => setRecursionLimit(e.target.value)}
-                    className="h-9 bg-background"
-                  />
-                </div>
               </div>
             </div>
+          </TabsContent>
+        </Tabs>
+      </div>
 
-            <div className="border border-border rounded-lg p-5 bg-card">
-              <div className="flex items-center gap-2 mb-4">
-                <Database className="w-4 h-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium">Memory & State</h3>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="memory" className="text-xs text-muted-foreground mb-2 block">Checkpoint Storage</Label>
-                  <Select value={memoryType} onValueChange={setMemoryType}>
-                    <SelectTrigger id="memory" className="h-9 bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {MEMORY_TYPES.map(type => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-center justify-between pt-2">
-                  <Label htmlFor="streaming" className="text-xs">Enable Streaming</Label>
-                  <Switch
-                    id="streaming"
-                    checked={streamingEnabled}
-                    onCheckedChange={setStreamingEnabled}
-                  />
-                </div>
-                <div className="flex items-center justify-between pt-2">
-                  <Label htmlFor="human" className="text-xs">Human-in-the-Loop</Label>
-                  <Switch
-                    id="human"
-                    checked={humanInLoop}
-                    onCheckedChange={setHumanInLoop}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Agent List */}
-            {/* Removed AgentList component as requested - it will be moved to the Chat page */}
-          </div>
+      {/* Floating Action Bar */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+        <div className="bg-background/80 backdrop-blur-xl border shadow-2xl rounded-full p-2 pl-6 flex items-center gap-4">
+          <span className="text-sm font-medium text-muted-foreground hidden sm:inline-block">
+            {isEditMode ? 'Unsaved changes' : 'Ready to create'}
+          </span>
+          <Button
+            size="lg"
+            className="rounded-full px-8 shadow-lg hover:shadow-primary/25 transition-all"
+            onClick={handleGenerateAgent}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4 mr-2" />
+            )}
+            {isEditMode ? 'Update Agent' : 'Create Agent'}
+          </Button>
         </div>
       </div>
 
-      {/* Tool Configuration Dialog */}
+      {/* Tool Config Dialog */}
       {showToolConfig && (
         <ToolConfigDialog
           toolId={showToolConfig}
