@@ -192,10 +192,25 @@ export function AgentChat() {
     }
   };
 
-  const handleRefreshAgents = async () => {
+  const handleClearConversation = async () => {
     setIsRefreshing(true);
-    await fetchAgents();
-    setIsRefreshing(false);
+    try {
+      // Optional: Cleanup old session on backend
+      if (threadId) {
+        await fetch(`http://localhost:8000/api/v1/agents/memory/session/${threadId}`, {
+          method: 'DELETE',
+        }).catch(console.error);
+      }
+    } finally {
+      const newThreadId = `thread_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      setThreadId(newThreadId);
+      setMessages([]);
+      setIsRefreshing(false);
+      toast({
+        title: "Conversation Cleared",
+        description: "Started a new chat session.",
+      });
+    }
   };
 
   const handleSend = async () => {
@@ -378,7 +393,7 @@ export function AgentChat() {
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
-              <SelectTrigger className="w-[240px] border-none shadow-none bg-transparent hover:bg-muted/50 focus:ring-0 font-medium text-lg px-2 transition-colors">
+              <SelectTrigger className="w-auto min-w-[200px] max-w-none h-auto py-2 [&>span]:line-clamp-none border-none shadow-none bg-transparent hover:bg-muted/50 focus:ring-0 font-medium text-lg px-2 transition-colors">
                 <SelectValue placeholder="Select Agent" />
               </SelectTrigger>
               <SelectContent>
@@ -403,7 +418,7 @@ export function AgentChat() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={handleRefreshAgents} className="text-muted-foreground hover:text-foreground">
+            <Button variant="ghost" size="icon" onClick={handleClearConversation} title="Clear Conversation" className="text-muted-foreground hover:text-foreground">
               <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
             </Button>
           </div>

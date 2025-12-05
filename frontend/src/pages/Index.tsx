@@ -42,7 +42,7 @@ export default function Index() {
                 <Sparkles className="w-6 h-6 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">Orchestration Dashboard</h1>
+                <h1 className="text-2xl font-bold">Dashboard</h1>
                 <p className="text-sm text-muted-foreground">
                   Manage and monitor your AI agents and workflows
                 </p>
