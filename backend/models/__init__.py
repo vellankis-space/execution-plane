@@ -9,3 +9,4 @@ from .queue import WorkflowQueue, QueuedExecution
 from .template import WorkflowTemplate, TemplateUsage, TemplateRating
 from .human_in_loop import ApprovalGate, HumanTask
 from .mcp_server import MCPServer, AgentMCPServer
+from .telemetry import Trace, Span
