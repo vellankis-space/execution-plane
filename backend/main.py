@@ -20,6 +20,22 @@ async def lifespan(app: FastAPI):
         print(f"Warning: Could not initialize telemetry: {e}")
 
     
+    # Load MCP configuration from file if it exists
+    try:
+        from services.fastmcp_manager import fastmcp_manager
+        import os
+        config_file_path = os.path.join(os.path.dirname(__file__), "..", "mcp.json")
+        if os.path.exists(config_file_path):
+            success = await fastmcp_manager.load_config_from_file(config_file_path)
+            if success:
+                print("MCP configuration loaded successfully from mcp.json")
+            else:
+                print("Failed to load MCP configuration from mcp.json")
+        else:
+            print("No mcp.json file found, skipping MCP configuration load")
+    except Exception as e:
+        print(f"Warning: Could not load MCP configuration: {e}")
+    
     # Initialize workflow scheduler
     try:
         from services.scheduling_service import SchedulingService

@@ -1471,6 +1471,10 @@ class AgentService:
     
     def _initialize_llm(self, provider: str, model: str, temperature: float, user_api_key: Optional[str] = None):
         """Initialize the LLM based on provider and user API key"""
+        # Validate inputs early
+        if not model or not model.strip():
+            raise ValueError(f"No model specified for {provider} provider. Please select a valid model.")
+        
         # Use LLMService which supports LiteLLM
         use_litellm = os.getenv("USE_LITELLM", "true").lower() == "true"
         
@@ -1490,6 +1494,10 @@ class AgentService:
     
     def _initialize_llm_direct(self, provider: str, model: str, temperature: float, user_api_key: Optional[str] = None):
         """Direct LLM initialization (fallback)"""
+        # Validate inputs
+        if not model or not model.strip():
+            raise ValueError(f"No model specified for {provider} provider. Please select a valid model.")
+        
         # Use user-provided API key if available, otherwise fall back to system keys
         openai_api_key = user_api_key or settings.OPENAI_API_KEY
         anthropic_api_key = user_api_key or settings.ANTHROPIC_API_KEY

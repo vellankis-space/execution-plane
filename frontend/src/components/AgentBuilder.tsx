@@ -10,12 +10,12 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText, Key, MessageSquare, Upload, Link2, Type, Brain, Wrench, Shield, Plus, X, Home, Loader2, RefreshCw, Server, CheckCircle, Trash2 } from "lucide-react";
+import { Sparkles, Cpu, Database, GitBranch, Settings2, Thermometer, Hash, Layers, Box, FileText, Key, MessageSquare, Upload, Link2, Type, Brain, Wrench, Shield, Plus, X, Home, Loader2, RefreshCw, Server, CheckCircle, Trash2, Info } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ToolConfigDialog } from "@/components/ToolConfigDialog";
 import { MCPServerModal } from "@/components/MCPServerModal";
-import MCPToolSelector from "@/components/MCPToolSelector";
+import MCPToolSelector from '@/components/MCPToolSelector';
 
 const LLM_PROVIDERS = [
   { value: "openai", label: "OpenAI" },
@@ -131,6 +131,8 @@ export function AgentBuilder() {
   const [loadingMcpServers, setLoadingMcpServers] = useState(false);
   const [deletingServerId, setDeletingServerId] = useState<string | null>(null);
   const [reconnectingServerId, setReconnectingServerId] = useState<string | null>(null);
+  // Track expanded state for each server
+  const [expandedServers, setExpandedServers] = useState<Record<string, boolean>>({});
 
 
   // Fetch agent data if in edit mode
@@ -314,12 +316,23 @@ export function AgentBuilder() {
           delete newConfigs[serverId];
           return newConfigs;
         });
+        // Close the tool selector when server is deselected
+        setExpandedServers(prevExpanded => {
+          const newExpanded = { ...prevExpanded };
+          delete newExpanded[serverId];
+          return newExpanded;
+        });
         return prev.filter(id => id !== serverId);
       } else {
         // Add server with "all tools" by default
         setMcpServerConfigs(configs => ({
           ...configs,
           [serverId]: null // null = all tools
+        }));
+        // Expand the tool selector when server is selected
+        setExpandedServers(prevExpanded => ({
+          ...prevExpanded,
+          [serverId]: true
         }));
         return [...prev, serverId];
       }
@@ -333,6 +346,24 @@ export function AgentBuilder() {
     }));
   };
 
+  // Helper function to get tool count for a server
+  const getToolCountForServer = (serverId: string) => {
+    const server = mcpServers.find(s => s.server_id === serverId);
+    return server ? server.tools_count : 0;
+  };
+
+  // Helper function to get selected tool count for a server
+  const getSelectedToolCountForServer = (serverId: string) => {
+    const config = mcpServerConfigs[serverId];
+    if (config === null) {
+      // All tools mode
+      return getToolCountForServer(serverId);
+    } else if (Array.isArray(config)) {
+      // Specific tools selected
+      return config.length;
+    }
+    return 0;
+  };
   const handleDeleteMcpServer = async (serverId: string, serverName: string) => {
     if (!confirm(`Are you sure you want to delete "${serverName}"? This action cannot be undone.`)) {
       return;
@@ -935,109 +966,186 @@ export function AgentBuilder() {
                 </div>
               </div>
 
-              <div className="pt-6 border-t">
-                <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
-                  <Server className="w-5 h-5 text-primary" />
-                  MCP Servers
-                </h3>
+              {/* MCP Servers */}
+              <div className="border border-border rounded-lg p-5 bg-card">
+                <div className="flex items-center gap-2 mb-4">
+                  <Server className="w-4 h-4 text-muted-foreground" />
+                  <h3 className="text-sm font-medium">MCP Servers Catalog</h3>
+                  <span className="text-xs text-muted-foreground ml-auto">External Tool Integrations</span>
+                </div>
 
-                {mcpServers.length === 0 ? (
-                  <div className="text-center py-12 bg-muted/30 rounded-xl border border-dashed">
-                    <Server className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-                    <p className="text-muted-foreground mb-4">Connect external tools via MCP</p>
+                {loadingMcpServers ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  </div>
+                ) : mcpServers.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Server className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground mb-3">No MCP servers configured</p>
                     <MCPServerModal onServerAdded={fetchMcpServers} />
                   </div>
                 ) : (
-                  <div className="space-y-6">
-                    {/* Active Servers */}
-                    <div className="grid gap-4">
-                      {mcpServers.filter(s => s.status === 'active').map(server => (
-                        <div key={server.server_id} className="bg-card border rounded-xl overflow-hidden">
-                          <div className="flex items-center gap-4 p-4">
-                            <Checkbox
-                              checked={selectedMcpServers.includes(server.server_id)}
-                              onCheckedChange={() => handleMcpServerToggle(server.server_id)}
-                            />
-                            <div className="flex-1">
-                              <h4 className="font-medium">{server.name}</h4>
-                              <p className="text-sm text-muted-foreground">{server.description}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-1 rounded text-xs bg-green-100 text-green-700">Active</span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteMcpServer(server.server_id, server.name);
-                                }}
-                                disabled={deletingServerId === server.server_id}
-                              >
-                                {deletingServerId === server.server_id ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="w-4 h-4" />
-                                )}
-                              </Button>
-                            </div>
-                          </div>
-
-                          {/* Tool Selector for Active Server */}
-                          {selectedMcpServers.includes(server.server_id) && (
-                            <div className="border-t bg-muted/10 p-4">
-                              <MCPToolSelector
-                                serverId={server.server_id}
-                                serverName={server.name}
-                                initialSelectedTools={mcpServerConfigs[server.server_id]}
-                                onToolsChange={(tools) => handleMcpToolsChange(server.server_id, tools)}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs text-muted-foreground">
+                        Select servers and choose which tools to enable
+                      </p>
+                      <MCPServerModal onServerAdded={fetchMcpServers} />
                     </div>
 
-                    {/* Inactive Servers */}
-                    {mcpServers.filter(s => s.status !== 'active').length > 0 && (
-                      <div className="pt-4 border-t">
-                        <h4 className="text-sm font-medium text-muted-foreground mb-3">Inactive Servers</h4>
-                        <div className="grid gap-3">
-                          {mcpServers.filter(s => s.status !== 'active').map(server => (
-                            <div key={server.server_id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-yellow-200/50">
-                              <div className="flex items-center gap-3">
-                                <span className="font-medium text-sm">{server.name}</span>
-                                <span className="px-2 py-0.5 rounded text-xs bg-yellow-100 text-yellow-700">{server.status}</span>
+                    {/* Info Box */}
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                      <div className="flex items-start gap-2">
+                        <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-1">MCP Server Selection</p>
+                          <p className="text-xs text-blue-700 dark:text-blue-300">
+                            Select Docker MCP toolkits or other servers to give your agent access to additional tools.
+                            Click the checkbox to enable a server, then expand the tool selector to choose specific tools.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* All Servers in Catalog View */}
+                    <div className="space-y-4">
+                      {mcpServers.map(server => {
+                        const isActive = server.status === 'active';
+                        return (
+                          <div
+                            key={server.server_id}
+                            className={`border border-border rounded-lg overflow-hidden ${isActive ? '' : 'opacity-80'}`}
+                          >
+                            {/* Server Header with Checkbox */}
+                            <div className={`flex items-center gap-3 p-3 ${isActive ? 'bg-muted/30' : 'bg-muted/10'}`}>
+                              <Checkbox
+                                id={server.server_id}
+                                checked={selectedMcpServers.includes(server.server_id)}
+                                onCheckedChange={() => handleMcpServerToggle(server.server_id)}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <label htmlFor={server.server_id} className="text-sm font-medium cursor-pointer block">
+                                  {server.name}
+                                  {server.name.includes('Docker') && (
+                                    <span className="ml-2 text-xs px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                                      Docker
+                                    </span>
+                                  )}
+                                  {!isActive && (
+                                    <span className="ml-2 text-xs px-2 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
+                                      {server.status}
+                                    </span>
+                                  )}
+                                </label>
+                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                                  {server.description || 'No description'}
+                                </p>
+                                {/* Tool count information */}
+                                {selectedMcpServers.includes(server.server_id) && (
+                                  <div className="mt-1 flex items-center gap-2">
+                                    <span className="text-xs px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                                      {mcpServerConfigs[server.server_id] === null ?
+                                        `All ${server.tools_count || 0} tools` :
+                                        `${getSelectedToolCountForServer(server.server_id)}/${server.tools_count || 0} tools`}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                               <div className="flex items-center gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleReconnectMcpServer(server.server_id, server.name)}
-                                  disabled={reconnectingServerId === server.server_id}
-                                >
-                                  {reconnectingServerId === server.server_id ? (
-                                    <Loader2 className="w-3 h-3 animate-spin mr-2" />
-                                  ) : (
-                                    <RefreshCw className="w-3 h-3 mr-2" />
-                                  )}
-                                  Reconnect
-                                </Button>
+                                {selectedMcpServers.includes(server.server_id) && (
+                                  <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                )}
+                                {!isActive && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-muted-foreground hover:text-blue-600"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleReconnectMcpServer(server.server_id, server.name);
+                                    }}
+                                    title="Retry connection"
+                                    disabled={reconnectingServerId === server.server_id}
+                                  >
+                                    {reconnectingServerId === server.server_id ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <RefreshCw className="w-3 h-3" />
+                                    )}
+                                  </Button>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                  onClick={() => handleDeleteMcpServer(server.server_id, server.name)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteMcpServer(server.server_id, server.name);
+                                  }}
                                   disabled={deletingServerId === server.server_id}
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  {deletingServerId === server.server_id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-4 h-4" />
+                                  )}
                                 </Button>
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+
+                            {/* Tool Preview for Docker MCP Toolkit */}
+                            {server.name.includes('Docker') && (
+                              <div className="px-3 pb-2">
+                                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Wrench className="w-3 h-3" />
+                                  <span>Docker MCP Toolkit - Contains multiple specialized tool collections</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Tool Selector (shown when server is selected) */}
+                            {selectedMcpServers.includes(server.server_id) && (
+                              <div className="border-t border-border">
+                                <MCPToolSelector
+                                  serverId={server.server_id}
+                                  serverName={server.name}
+                                  initialSelectedTools={mcpServerConfigs[server.server_id]}
+                                  onToolsChange={(tools) => handleMcpToolsChange(server.server_id, tools)}
+                                />
+                              </div>
+                            )}
+
+                            {/* Error message for inactive servers */}
+                            {!isActive && server.last_error && (
+                              <div className="px-3 pb-3">
+                                <div className="text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">
+                                  <span className="font-medium">Error:</span> {server.last_error}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Tool Preview for Active Servers (when not selected) */}
+                            {isActive && !selectedMcpServers.includes(server.server_id) && (
+                              <div className="px-3 pb-3 border-t border-border">
+                                <div className="flex items-center justify-between">
+                                  <div className="text-xs text-muted-foreground">
+                                    {server.tools_count || 0} available tools
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => handleMcpServerToggle(server.server_id)}
+                                  >
+                                    Select to view tools
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
 
                     <div className="flex justify-center mt-4">
                       <MCPServerModal onServerAdded={fetchMcpServers} />
