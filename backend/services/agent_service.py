@@ -22,11 +22,35 @@ import hashlib
 import base64
 from cryptography.fernet import Fernet
 
+# Import OpenLLMetry decorators for comprehensive tracing
+try:
+    from traceloop.sdk.decorators import workflow, task, agent as agent_decorator, tool as tool_decorator
+    TRACELOOP_ENABLED = True
+except ImportError:
+    # Fallback no-op decorators if traceloop not installed
+    def workflow(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def task(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def agent_decorator(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def tool_decorator(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    TRACELOOP_ENABLED = False
+
 logger = logging.getLogger(__name__)
 
 from services.memory_service import MemoryService
 from services.tools_service import ToolsService
-from services.cost_tracking_service import CostTrackingService
+
 from services.llm_service import LLMService
 from services.rate_limit_handler import RateLimitHandler, RateLimitError
 from services.fastmcp_manager import fastmcp_manager
@@ -52,8 +76,7 @@ class AgentService:
         # Initialize tools service for external tools
         self.tools_service = ToolsService()
         
-        # Initialize cost tracking service
-        self.cost_service = CostTrackingService(db)
+
         
         # Initialize LLM service (with LiteLLM support)
         self.llm_service = LLMService()
@@ -691,12 +714,18 @@ class AgentService:
             else:
                 return f"Error communicating with the agent: {error_msg}"
     
-    async def execute_agent(self, agent_id: str, input_text: str, session_id: Optional[str] = None) -> str:
+    @workflow(name="agent_execution")
+    async def execute_agent(self, agent_id: str, input_text: str, session_id: Optional[str] = None, 
+                            workflow_id: Optional[str] = None, workflow_execution_id: Optional[str] = None) -> str:
         """
         Execute an agent with automatic rate limit handling.
         
         NOTE: recursion_limit is now taken from agent configuration (single source of truth).
         Users can configure it in the UI when creating/editing an agent.
+        
+        Args:
+            workflow_id: Optional workflow ID if this agent is being executed as part of a workflow
+            workflow_execution_id: Optional workflow execution ID for tracing
         """
         agent = await self.get_agent(agent_id)
         if not agent:
@@ -728,6 +757,62 @@ class AgentService:
             if pii_middleware:
                 filtered_input = pii_middleware.process_message(input_text, message_type="input")
         
+        # Add telemetry context for trace enrichment
+        # Use Traceloop's decorator to create proper traced execution
+        agent_span = None
+        try:
+            from services.trace_context import trace_context_manager
+            from services.telemetry_service import telemetry_service
+            
+            # Get current trace ID to register in context manager (Strategy 2 for SQLite exporter)
+            span = telemetry_service.get_current_span()
+            trace_id = None
+            if span:
+                try:
+                    trace_id = format(span.get_span_context().trace_id, '032x')
+                except Exception:
+                    pass
+            
+            # Context data for agent traces
+            # NOTE: We intentionally keep agent traces separate from workflow traces
+            # Workflow metrics are derived from workflow_executions table
+            context_data = {
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "agent_name": agent.name if hasattr(agent, 'name') else None,
+                "llm_provider": agent.llm_provider,
+                "llm_model": agent.llm_model,
+                "tenant_id": agent.tenant_id if hasattr(agent, 'tenant_id') else None
+            }
+            
+            # 1. Set thread-local context (Strategy 1 - for same-thread access)
+            trace_context_manager.set_current_context(**context_data)
+            
+            # 2. Register trace_id context (Strategy 2 - for background thread exporter)
+            if trace_id:
+                trace_context_manager.set_trace_context(trace_id, **context_data)
+                logger.info(f"📊 Registered trace context for trace_id {trace_id}")
+            
+            # 3. Set attributes on current span and baggage (for propagation)
+            telemetry_service.set_span_attributes(**context_data)
+            
+            logger.info(f"📊 Set telemetry context for agent {agent_id}")
+        except Exception as e:
+            logger.error(f"❌ Failed to set telemetry context: {e}", exc_info=True)
+        
+        # Execute retry loop
+        return await self._execute_retry_loop(
+            agent, filtered_input, session_id, agent_id,
+            retry_count, max_retries, current_provider, current_model,
+            enable_rate_limit_fallback, last_provider_tried
+        )
+    
+    async def _execute_retry_loop(
+        self, agent, filtered_input, session_id, agent_id,
+        retry_count, max_retries, current_provider, current_model,
+        enable_rate_limit_fallback, last_provider_tried
+    ):
+        """Extracted retry loop to allow span context wrapping"""
         # Retry loop with fallback support
         while retry_count < max_retries:
             try:
@@ -842,6 +927,8 @@ class AgentService:
         # If we exhausted all retries
         raise ValueError(f"Failed to execute agent after {max_retries} attempts with different models/providers.")
     
+    
+    @task(name="agent_llm_call")
     async def _execute_agent_with_fallback(
         self, 
         agent: AgentModel,
@@ -1051,29 +1138,6 @@ class AgentService:
                 else:
                     response_text = str(final_message)
                 
-                # Track cost (estimate based on input/output sizes)
-                # Rough estimation: ~4 characters per token
-                try:
-                    input_tokens = len(filtered_input) // 4
-                    output_tokens = len(response_text) // 4
-                    
-                    # Track API call
-                    await self.cost_service.track_api_call(
-                        provider=agent.llm_provider,
-                        model=agent.llm_model,
-                        input_tokens=input_tokens,
-                        output_tokens=output_tokens,
-                        agent_id=agent.agent_id,
-                        workflow_id=None,  # Will be set if called from workflow
-                        execution_id=None,  # Will be set if called from workflow
-                        call_type="chat",
-                        metadata={
-                            "agent_type": agent.agent_type,
-                            "estimated": True
-                        }
-                    )
-                except Exception as cost_error:
-                    logger.warning(f"Error tracking cost: {str(cost_error)}")
                 
                 return response_text
             except Exception as e:
@@ -1407,6 +1471,10 @@ class AgentService:
     
     def _initialize_llm(self, provider: str, model: str, temperature: float, user_api_key: Optional[str] = None):
         """Initialize the LLM based on provider and user API key"""
+        # Validate inputs early
+        if not model or not model.strip():
+            raise ValueError(f"No model specified for {provider} provider. Please select a valid model.")
+        
         # Use LLMService which supports LiteLLM
         use_litellm = os.getenv("USE_LITELLM", "true").lower() == "true"
         
@@ -1426,6 +1494,10 @@ class AgentService:
     
     def _initialize_llm_direct(self, provider: str, model: str, temperature: float, user_api_key: Optional[str] = None):
         """Direct LLM initialization (fallback)"""
+        # Validate inputs
+        if not model or not model.strip():
+            raise ValueError(f"No model specified for {provider} provider. Please select a valid model.")
+        
         # Use user-provided API key if available, otherwise fall back to system keys
         openai_api_key = user_api_key or settings.OPENAI_API_KEY
         anthropic_api_key = user_api_key or settings.ANTHROPIC_API_KEY

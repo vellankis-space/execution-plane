@@ -34,7 +34,7 @@ export class WorkflowExecutionEngine {
   private executionResults: Map<string, NodeExecutionResult>;
   private isPaused: boolean = false;
   private isStopped: boolean = false;
-  private onNodeUpdate?: (nodeId: string, status: string, output?: any) => void;
+  private onNodeUpdate?: (nodeId: string, status: string, output?: any, executionTime?: number) => void;
   private onExecutionUpdate?: (result: WorkflowExecutionResult) => void;
   private onUserInputRequired?: (node: Node, welcomeMessage: string) => Promise<string>;
 
@@ -42,7 +42,7 @@ export class WorkflowExecutionEngine {
     nodes: Node[],
     edges: Edge[],
     context: ExecutionContext,
-    onNodeUpdate?: (nodeId: string, status: string, output?: any) => void,
+    onNodeUpdate?: (nodeId: string, status: string, output?: any, executionTime?: number) => void,
     onExecutionUpdate?: (result: WorkflowExecutionResult) => void,
     onUserInputRequired?: (node: Node, welcomeMessage: string) => Promise<string>
   ) {
@@ -173,7 +173,7 @@ export class WorkflowExecutionEngine {
       };
 
       this.executionResults.set(node.id, result);
-      this.onNodeUpdate?.(node.id, "completed", output);
+      this.onNodeUpdate?.(node.id, "completed", output, executionTime);
 
       // Execute next nodes
       await this.executeNextNodes(node, output);
@@ -191,7 +191,7 @@ export class WorkflowExecutionEngine {
       };
 
       this.executionResults.set(node.id, result);
-      this.onNodeUpdate?.(node.id, "failed");
+      this.onNodeUpdate?.(node.id, "failed", null, executionTime);
 
       // Try error handler nodes
       const errorHandlers = this.getErrorHandlerNodes(node);
@@ -216,7 +216,7 @@ export class WorkflowExecutionEngine {
 
     // Prepare agent input by evaluating parameters with expressions
     let agentInput = inputData;
-    
+
     if (parameters && Object.keys(parameters).length > 0) {
       // If node has parameters, map them from context
       agentInput = {};
@@ -240,6 +240,8 @@ export class WorkflowExecutionEngine {
     }
 
     // Call backend API to execute agent - FIXED: agent_id in URL path
+    // NOTE: We intentionally do NOT pass workflow_id here to keep agent traces separate
+    // Workflow metrics are derived from workflow_executions table, not from agent spans
     const response = await fetch(`http://localhost:8000/api/v1/agents/${agent_id}/execute`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -325,7 +327,7 @@ export class WorkflowExecutionEngine {
 
   private async executeChatNode(node: Node, inputData: any): Promise<any> {
     const welcomeMessage = node.data.welcomeMessage || "Please provide your input:";
-    
+
     // Check if we have a callback for user input
     if (!this.onUserInputRequired) {
       throw new Error("Chat node requires user input callback to be configured");
@@ -333,7 +335,7 @@ export class WorkflowExecutionEngine {
 
     // Request user input through the callback
     const userMessage = await this.onUserInputRequired(node, welcomeMessage);
-    
+
     // Return the user's message in a format accessible to next nodes
     return {
       message: userMessage,
@@ -422,7 +424,7 @@ export class WorkflowExecutionEngine {
           timestamp: new Date().toISOString(),
         };
         this.executionResults.set(nextNode.id, result);
-        this.onNodeUpdate?.(nextNode.id, "completed", outputData);
+        this.onNodeUpdate?.(nextNode.id, "completed", outputData, 0);
       }
     });
 
@@ -454,7 +456,7 @@ export class WorkflowExecutionEngine {
       if (expression.includes('{{') && expression.includes('}}')) {
         return safeEvaluator.evaluateTemplate(expression, context);
       }
-      
+
       // Otherwise evaluate as condition (for boolean expressions)
       return safeEvaluator.evaluateCondition(expression, context);
     } catch (error) {

@@ -58,9 +58,9 @@ export const API_ENDPOINTS = {
 
   // Agents
   AGENTS: {
-    LIST: `${API_V1_URL}/agents`,
+    LIST: `${API_V1_URL}/agents/`,
     GET: (id: string) => `${API_V1_URL}/agents/${id}`,
-    CREATE: `${API_V1_URL}/agents`,
+    CREATE: `${API_V1_URL}/agents/`,
     UPDATE: (id: string) => `${API_V1_URL}/agents/${id}`,
     DELETE: (id: string) => `${API_V1_URL}/agents/${id}`,
     EXECUTE: (id: string) => `${API_V1_URL}/agents/${id}/execute`,
@@ -73,9 +73,9 @@ export const API_ENDPOINTS = {
 
   // Workflows
   WORKFLOWS: {
-    LIST: `${API_V1_URL}/workflows`,
+    LIST: `${API_V1_URL}/workflows/`,
     GET: (id: string) => `${API_V1_URL}/workflows/${id}`,
-    CREATE: `${API_V1_URL}/workflows`,
+    CREATE: `${API_V1_URL}/workflows/`,
     UPDATE: (id: string) => `${API_V1_URL}/workflows/${id}`,
     DELETE: (id: string) => `${API_V1_URL}/workflows/${id}`,
     EXECUTE: (id: string) => `${API_V1_URL}/workflows/${id}/execute`,
@@ -147,11 +147,8 @@ export const API_ENDPOINTS = {
 
 // Observability endpoints (may not be available if router is removed)
 export const OBSERVABILITY_ENDPOINTS = {
-  METRICS_WS: getWSUrl('/api/v1/observability/ws/metrics'),
-  EXECUTION_WS: (executionId: string) => getWSUrl(`/api/v1/observability/ws/executions/${executionId}`),
+  AGENT_METRICS: (agentId: string) => `${API_V1_URL}/observability/agents/${agentId}/metrics`,
+  WORKFLOW_METRICS: (workflowId: string) => `${API_V1_URL}/observability/workflows/${workflowId}/metrics`,
   TRACES: `${API_V1_URL}/observability/traces`,
-  TRACE: (traceId: string) => `${API_V1_URL}/observability/traces/${traceId}`,
-  METRICS_STREAM: `${API_V1_URL}/observability/metrics/stream`,
-  OVERVIEW: `${API_V1_URL}/observability/overview`,
 };
 

@@ -305,20 +305,36 @@ export function ExpressionEditor({
 }
 
 // Simple key-value parameter mapping
+// Enhanced Parameter Mapper with Visual Builder Support
+import { VisualParameterBuilder } from "./VisualParameterBuilder";
+
 export function ParameterMapper({
   parameters,
   onChange,
+  nodeType,
+  credentials = [],
 }: {
-  parameters: Record<string, string>;
-  onChange: (params: Record<string, string>) => void;
+  parameters: Record<string, any>;
+  onChange: (params: Record<string, any>) => void;
+  nodeType?: string;
+  credentials?: Array<{ id: string; name: string; type: string }>;
 }) {
+  const [mode, setMode] = useState<"visual" | "advanced">("visual");
   const [params, setParams] = useState<Array<{ key: string; value: string }>>(
-    Object.entries(parameters || {}).map(([key, value]) => ({ key, value }))
+    Object.entries(parameters || {}).map(([key, value]) => ({
+      key,
+      value: typeof value === "string" ? value : JSON.stringify(value),
+    }))
   );
 
   // Sync with prop changes
   useEffect(() => {
-    setParams(Object.entries(parameters || {}).map(([key, value]) => ({ key, value })));
+    setParams(
+      Object.entries(parameters || {}).map(([key, value]) => ({
+        key,
+        value: typeof value === "string" ? value : JSON.stringify(value),
+      }))
+    );
   }, [parameters]);
 
   const addParameter = () => {
@@ -331,26 +347,73 @@ export function ParameterMapper({
     updateParameters(newParams);
   };
 
-  const updateParameter = (index: number, field: "key" | "value", value: string) => {
+  const updateParameter = (
+    index: number,
+    field: "key" | "value",
+    value: string
+  ) => {
     const newParams = [...params];
     newParams[index][field] = value;
     setParams(newParams);
     updateParameters(newParams);
   };
 
-  const updateParameters = (paramList: Array<{ key: string; value: string }>) => {
-    const paramObj: Record<string, string> = {};
+  const updateParameters = (
+    paramList: Array<{ key: string; value: string }>
+  ) => {
+    const paramObj: Record<string, any> = {};
     paramList.forEach((p) => {
-      if (p.key) paramObj[p.key] = p.value;
+      if (p.key) {
+        // Try to parse JSON values if possible, otherwise keep as string
+        try {
+          // Only parse if it looks like JSON (starts with { or [)
+          if (
+            (p.value.trim().startsWith("{") ||
+              p.value.trim().startsWith("[")) &&
+            !p.value.includes("{{") // Don't parse expressions
+          ) {
+            paramObj[p.key] = JSON.parse(p.value);
+          } else {
+            paramObj[p.key] = p.value;
+          }
+        } catch (e) {
+          paramObj[p.key] = p.value;
+        }
+      }
     });
     onChange(paramObj);
   };
 
+  // If nodeType is provided, show the visual builder
+  if (nodeType && mode === "visual") {
+    return (
+      <VisualParameterBuilder
+        nodeType={nodeType}
+        parameters={parameters || {}}
+        onChange={onChange}
+        credentials={credentials}
+        onModeChange={setMode}
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div>
-          <Label>Parameters</Label>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Label>Parameters</Label>
+            {nodeType && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 text-[10px] px-2"
+                onClick={() => setMode("visual")}
+              >
+                Switch to Visual Mode
+              </Button>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground mt-0.5">
             Define key-value pairs to pass to this node
           </p>
@@ -364,7 +427,9 @@ export function ParameterMapper({
       {params.length === 0 ? (
         <div className="text-center py-8 border border-dashed rounded-lg">
           <p className="text-sm text-muted-foreground">No parameters defined</p>
-          <p className="text-xs text-muted-foreground mt-1">Click "Add" to create a parameter</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Click "Add" to create a parameter
+          </p>
         </div>
       ) : (
         <div className="space-y-2">

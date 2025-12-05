@@ -148,10 +148,19 @@ async def get_agent_mcp_servers(agent_id: str, db: Session = Depends(get_db)):
 
 @router.post("/{agent_id}/execute", response_model=AgentExecutionResponse)
 async def execute_agent(agent_id: str, request: AgentExecutionRequest, db: Session = Depends(get_db)):
-    """Execute an agent with input"""
+    """Execute an agent with input.
+    
+    Optionally accepts workflow_id and workflow_execution_id for telemetry
+    enrichment when the agent is being executed as part of a workflow.
+    """
     try:
         agent_service = AgentService(db)
-        response = await agent_service.execute_agent(agent_id, request.input)
+        response = await agent_service.execute_agent(
+            agent_id, 
+            request.input,
+            workflow_id=request.workflow_id,
+            workflow_execution_id=request.workflow_execution_id
+        )
         return AgentExecutionResponse(response=response)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

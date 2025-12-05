@@ -15,7 +15,13 @@ import {
   RefreshCw,
   Globe,
   Terminal,
-  Radio
+  Radio,
+  AlertCircle,
+  Search,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  Folder
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,12 +51,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
 
 interface MCPServer {
   server_id: string;
@@ -80,11 +80,14 @@ const MCPServers = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingServer, setEditingServer] = useState<MCPServer | null>(null);
   const [selectedServer, setSelectedServer] = useState<MCPServer | null>(null);
-  const [serverTools, setServerTools] = useState<MCPTool[]>([]);
+  const [serverTools, setServerTools] = useState<Record<string, MCPTool[]>>({});
+  const [loadingTools, setLoadingTools] = useState<Record<string, boolean>>({});
   const [showToolsModal, setShowToolsModal] = useState(false);
   const [connectingServerId, setConnectingServerId] = useState<string | null>(null);
   const [disconnectingServerId, setDisconnectingServerId] = useState<string | null>(null);
   const [deletingServerId, setDeletingServerId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedServers, setExpandedServers] = useState<Record<string, boolean>>({});
   const { toast } = useToast();
 
   // Form state
@@ -207,7 +210,8 @@ const MCPServers = () => {
         });
         fetchServers();
       } else {
-        throw new Error('Connection failed');
+        const errorData = await response.json();
+        throw new Error(errorData.detail?.message || 'Connection failed');
       }
     } catch (error: any) {
       toast({
@@ -265,6 +269,12 @@ const MCPServers = () => {
           title: 'Deleted',
           description: `${server.name} deleted successfully`,
         });
+        // Remove tools from cache when server is deleted
+        setServerTools(prev => {
+          const newTools = { ...prev };
+          delete newTools[server.server_id];
+          return newTools;
+        });
         fetchServers();
       }
     } catch (error) {
@@ -278,24 +288,47 @@ const MCPServers = () => {
     }
   };
 
-  const handleViewTools = async (server: MCPServer) => {
+  const fetchServerTools = async (serverId: string) => {
+    // If we already have tools for this server, don't fetch again
+    if (serverTools[serverId] && serverTools[serverId].length > 0) {
+      return;
+    }
+
+    setLoadingTools(prev => ({ ...prev, [serverId]: true }));
+
     try {
-      setSelectedServer(server);
-      setShowToolsModal(true);
       const response = await fetch(
-        `http://localhost:8000/api/v1/mcp-servers/${server.server_id}/tools`
+        `http://localhost:8000/api/v1/mcp-servers/${serverId}/tools`
       );
 
       if (response.ok) {
         const data = await response.json();
-        setServerTools(data.tools || []);
+        setServerTools(prev => ({
+          ...prev,
+          [serverId]: data.tools || []
+        }));
       }
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: 'Failed to fetch tools',
+        description: error.message || 'Failed to fetch tools',
         variant: 'destructive',
       });
+    } finally {
+      setLoadingTools(prev => ({ ...prev, [serverId]: false }));
+    }
+  };
+
+  const handleToggleServerExpansion = async (serverId: string) => {
+    const newState = !expandedServers[serverId];
+    setExpandedServers(prev => ({
+      ...prev,
+      [serverId]: newState
+    }));
+
+    // If expanding, fetch tools
+    if (newState) {
+      await fetchServerTools(serverId);
     }
   };
 
@@ -363,6 +396,13 @@ const MCPServers = () => {
     }
   };
 
+  // Filter servers based on search query
+  const filteredServers = servers.filter(server =>
+    server.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    server.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    server.transport_type.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       {/* Header Section */}
@@ -374,9 +414,9 @@ const MCPServers = () => {
                 <Server className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">MCP Servers</h1>
+                <h1 className="text-2xl font-bold">MCP Servers & Tools Catalog</h1>
                 <p className="text-sm text-muted-foreground">
-                  Manage Model Context Protocol servers and external tool integrations
+                  Collection-wise view of servers and their available tools
                 </p>
               </div>
             </div>
@@ -425,7 +465,7 @@ const MCPServers = () => {
                     </div>
 
                     <div>
-                      <Label htmlFor="transport">Transport Type *</Label>
+                      <Label htmlFor="transport_type">Transport Type *</Label>
                       <Select
                         value={formData.transport_type}
                         onValueChange={(value) => setFormData({ ...formData, transport_type: value })}
@@ -436,7 +476,7 @@ const MCPServers = () => {
                         <SelectContent>
                           <SelectItem value="http">HTTP</SelectItem>
                           <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
-                          <SelectItem value="stdio">STDIO (Local Process)</SelectItem>
+                          <SelectItem value="stdio">STDIO</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -455,15 +495,34 @@ const MCPServers = () => {
                         </div>
 
                         <div>
-                          <Label htmlFor="auth_token">API Key / Token (optional)</Label>
-                          <Input
-                            id="auth_token"
-                            type="password"
-                            value={formData.auth_token}
-                            onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
-                            placeholder="Enter authentication token"
-                          />
+                          <Label htmlFor="auth_type">Authentication Type</Label>
+                          <Select
+                            value={formData.auth_type}
+                            onValueChange={(value) => setFormData({ ...formData, auth_type: value })}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select auth type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="bearer">Bearer Token</SelectItem>
+                              <SelectItem value="oauth">OAuth</SelectItem>
+                              <SelectItem value="apikey">API Key</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
+
+                        {formData.auth_type && (
+                          <div>
+                            <Label htmlFor="auth_token">Authentication Token/API Key</Label>
+                            <Input
+                              id="auth_token"
+                              type="password"
+                              value={formData.auth_token}
+                              onChange={(e) => setFormData({ ...formData, auth_token: e.target.value })}
+                              placeholder="Enter your authentication token"
+                            />
+                          </div>
+                        )}
                       </>
                     )}
 
@@ -475,12 +534,9 @@ const MCPServers = () => {
                             id="command"
                             value={formData.command}
                             onChange={(e) => setFormData({ ...formData, command: e.target.value })}
-                            placeholder="e.g., bunx, npx, python, node, uvx"
+                            placeholder="e.g., python server.py"
                             required
                           />
-                          <p className="text-xs text-muted-foreground mt-1">
-                            The executable command to run the MCP server
-                          </p>
                         </div>
 
                         <div>
@@ -489,13 +545,9 @@ const MCPServers = () => {
                             id="args"
                             value={formData.args}
                             onChange={(e) => setFormData({ ...formData, args: e.target.value })}
-                            placeholder='["-y", "@upstash/context7-mcp", "--api-key", "YOUR_API_KEY"]'
-                            rows={3}
-                            className="font-mono text-xs"
+                            placeholder='["--port", "8080"]'
+                            rows={2}
                           />
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Command-line arguments as a JSON array. Example: ["-y", "package-name", "--flag", "value"]
-                          </p>
                         </div>
 
                         <div>
@@ -504,28 +556,24 @@ const MCPServers = () => {
                             id="env"
                             value={formData.env}
                             onChange={(e) => setFormData({ ...formData, env: e.target.value })}
-                            placeholder='{"API_KEY": "your-api-key-here", "DEBUG": "true"}'
-                            rows={3}
-                            className="font-mono text-xs"
+                            placeholder='{"DEBUG": "true", "PORT": "8080"}'
+                            rows={2}
                           />
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Environment variables as a JSON object (optional)
-                          </p>
                         </div>
 
                         <div>
-                          <Label htmlFor="cwd">Working Directory (optional)</Label>
+                          <Label htmlFor="cwd">Working Directory</Label>
                           <Input
                             id="cwd"
                             value={formData.cwd}
                             onChange={(e) => setFormData({ ...formData, cwd: e.target.value })}
-                            placeholder="/path/to/working/directory"
+                            placeholder="e.g., /path/to/server"
                           />
                         </div>
                       </>
                     )}
 
-                    <div className="flex justify-end gap-2 pt-4">
+                    <div className="flex justify-end gap-3 pt-4">
                       <Button
                         type="button"
                         variant="outline"
@@ -548,169 +596,317 @@ const MCPServers = () => {
         </div>
       </div>
 
+      {/* Search Bar */}
+      <div className="container mx-auto px-8 py-4">
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Search servers or tools..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+      </div>
+
       {/* Content Section */}
       <div className="container mx-auto px-8 py-8">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
           </div>
-        ) : servers.length === 0 ? (
+        ) : filteredServers.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center h-64">
               <Server className="w-12 h-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">No MCP Servers</h3>
+              <h3 className="text-lg font-medium mb-2">
+                {searchQuery ? 'No servers match your search' : 'No MCP Servers'}
+              </h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Get started by adding your first MCP server
+                {searchQuery ? 'Try adjusting your search terms' : 'Get started by adding your first MCP server'}
               </p>
-              <Button onClick={() => setShowAddModal(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add MCP Server
-              </Button>
+              {!searchQuery && (
+                <Button onClick={() => setShowAddModal(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add MCP Server
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {servers.map((server) => (
-              <Card key={server.server_id} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      {getTransportIcon(server.transport_type)}
-                      <CardTitle className="text-lg">{server.name}</CardTitle>
-                    </div>
-                    {getStatusBadge(server.status)}
-                  </div>
-                  <CardDescription className="line-clamp-2">
-                    {server.description || 'No description'}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Transport:</span>
-                      <Badge variant="outline">{server.transport_type.toUpperCase()}</Badge>
-                    </div>
-
-                    {server.url && (
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Endpoint:</span>
-                        <span className="text-xs font-mono truncate max-w-[180px]">
-                          {server.url}
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-3 gap-2 pt-2 border-t">
-                      <div className="text-center">
-                        <div className="flex items-center justify-center gap-1 text-sm font-medium">
-                          <Wrench className="w-3 h-3" />
-                          {server.tools_count}
-                        </div>
-                        <div className="text-xs text-muted-foreground">Tools</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="flex items-center justify-center gap-1 text-sm font-medium">
-                          <FileText className="w-3 h-3" />
-                          {server.resources_count}
-                        </div>
-                        <div className="text-xs text-muted-foreground">Resources</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="flex items-center justify-center gap-1 text-sm font-medium">
-                          <Zap className="w-3 h-3" />
-                          {server.prompts_count}
-                        </div>
-                        <div className="text-xs text-muted-foreground">Prompts</div>
-                      </div>
-                    </div>
-
-                    {server.last_error && (
-                      <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded">
-                        {server.last_error}
-                      </div>
-                    )}
-
-                    <div className="flex gap-2 pt-2">
-                      {server.status === 'active' ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="flex-1"
-                          onClick={() => handleDisconnect(server)}
-                          disabled={disconnectingServerId === server.server_id}
-                        >
-                          {disconnectingServerId === server.server_id ? (
-                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                          ) : (
-                            <StopCircle className="w-3 h-3 mr-1" />
-                          )}
-                          {disconnectingServerId === server.server_id ? 'Disconnecting...' : 'Disconnect'}
-                        </Button>
+          <div className="space-y-6">
+            <div className="text-sm text-muted-foreground">
+              Showing {filteredServers.length} server{filteredServers.length !== 1 ? 's' : ''} with their tools
+            </div>
+            
+            <div className="space-y-4">
+              {filteredServers.map((server) => (
+                <Card key={server.server_id} className="overflow-hidden">
+                  {/* Server Header */}
+                  <div 
+                    className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
+                    onClick={() => handleToggleServerExpansion(server.server_id)}
+                  >
+                    <div className="flex items-center gap-3">
+                      {expandedServers[server.server_id] ? (
+                        <ChevronDown className="w-5 h-5 text-muted-foreground" />
                       ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="flex-1"
-                          onClick={() => handleConnect(server)}
-                          disabled={connectingServerId === server.server_id}
-                        >
-                          {connectingServerId === server.server_id ? (
-                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                          ) : (
-                            <Play className="w-3 h-3 mr-1" />
-                          )}
-                          {connectingServerId === server.server_id ? 'Connecting...' : 'Connect'}
-                        </Button>
+                        <ChevronRight className="w-5 h-5 text-muted-foreground" />
                       )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleViewTools(server)}
-                        disabled={server.status !== 'active'}
-                      >
-                        <Wrench className="w-3 h-3" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleEdit(server)}
-                      >
-                        <Edit className="w-3 h-3" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDelete(server)}
-                        disabled={deletingServerId === server.server_id}
-                      >
-                        {deletingServerId === server.server_id ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-3 h-3" />
-                        )}
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {getTransportIcon(server.transport_type)}
+                        <div>
+                          <h3 className="font-semibold text-lg flex items-center gap-2">
+                            {server.name}
+                            {server.name.includes('Docker') && (
+                              <Badge variant="secondary" className="text-xs">
+                                Docker
+                              </Badge>
+                            )}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            {server.description || 'No description provided'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-4 text-sm">
+                        <div className="flex items-center gap-1">
+                          <Wrench className="w-4 h-4 text-muted-foreground" />
+                          <span>{server.tools_count}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <FileText className="w-4 h-4 text-muted-foreground" />
+                          <span>{server.resources_count}</span>
+                        </div>
+                      </div>
+                      {getStatusBadge(server.status)}
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                  
+                  {/* Server Details and Tools */}
+                  {expandedServers[server.server_id] && (
+                    <div className="border-t">
+                      <div className="p-4 bg-background">
+                        {/* Server Actions */}
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {server.status === 'active' ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDisconnect(server);
+                              }}
+                              disabled={disconnectingServerId === server.server_id}
+                            >
+                              {disconnectingServerId === server.server_id ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <StopCircle className="w-4 h-4 mr-2" />
+                              )}
+                              {disconnectingServerId === server.server_id ? 'Disconnecting...' : 'Disconnect'}
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleConnect(server);
+                              }}
+                              disabled={connectingServerId === server.server_id}
+                            >
+                              {connectingServerId === server.server_id ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <Play className="w-4 h-4 mr-2" />
+                              )}
+                              {connectingServerId === server.server_id ? 'Connecting...' : 'Connect'}
+                            </Button>
+                          )}
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEdit(server);
+                            }}
+                          >
+                            <Edit className="w-4 h-4 mr-2" />
+                            Edit
+                          </Button>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(server);
+                            }}
+                            disabled={deletingServerId === server.server_id}
+                          >
+                            {deletingServerId === server.server_id ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4 mr-2" />
+                            )}
+                            Delete
+                          </Button>
+                        </div>
+                        
+                        {/* Server Info */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                          <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                            <span className="text-muted-foreground">Transport:</span>
+                            <Badge variant="outline">{server.transport_type.toUpperCase()}</Badge>
+                          </div>
+                          
+                          {server.url && (
+                            <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                              <span className="text-muted-foreground">Endpoint:</span>
+                              <span className="text-sm font-mono truncate max-w-[70%]">
+                                {server.url}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {server.last_error && (
+                          <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 mb-6">
+                            <div className="flex items-start gap-2">
+                              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="text-sm font-medium text-red-800 dark:text-red-200">Connection Error</p>
+                                <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                                  {server.last_error}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Tools Section */}
+                        <div className="border-t pt-4">
+                          <div className="flex items-center gap-2 mb-4">
+                            <FolderOpen className="w-5 h-5 text-muted-foreground" />
+                            <h4 className="font-medium text-lg">Available Tools</h4>
+                            <Badge variant="secondary">{serverTools[server.server_id]?.length || 0} tools</Badge>
+                          </div>
+                          
+                          {loadingTools[server.server_id] ? (
+                            <div className="flex items-center justify-center py-8">
+                              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mr-2" />
+                              <span>Loading tools...</span>
+                            </div>
+                          ) : server.status !== 'active' ? (
+                            <div className="text-center py-8 text-muted-foreground">
+                              <p>Connect to the server to view and use its tools</p>
+                              <Button 
+                                variant="outline" 
+                                className="mt-3"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleConnect(server);
+                                }}
+                                disabled={connectingServerId === server.server_id}
+                              >
+                                {connectingServerId === server.server_id ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <Play className="w-4 h-4 mr-2" />
+                                )}
+                                Connect Server
+                              </Button>
+                            </div>
+                          ) : !serverTools[server.server_id] || serverTools[server.server_id].length === 0 ? (
+                            <div className="text-center py-8 text-muted-foreground">
+                              <p>No tools available from this server</p>
+                              <Button 
+                                variant="outline" 
+                                className="mt-3"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  fetchServerTools(server.server_id);
+                                }}
+                              >
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Refresh Tools
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {serverTools[server.server_id].map((tool, index) => (
+                                <Card 
+                                  key={index} 
+                                  className="hover:shadow-md transition-shadow cursor-pointer"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Show tool details in modal
+                                    setSelectedServer(server);
+                                    setServerTools(prev => ({
+                                      ...prev,
+                                      temp: [tool]
+                                    }));
+                                    setShowToolsModal(true);
+                                  }}
+                                >
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-base flex items-center gap-2">
+                                      <Wrench className="w-4 h-4 text-muted-foreground" />
+                                      <span className="truncate">{tool.name}</span>
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <CardDescription className="line-clamp-2 text-xs">
+                                      {tool.description || 'No description available'}
+                                    </CardDescription>
+                                    <div className="mt-3 text-xs text-muted-foreground">
+                                      Click to view details
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              ))}
+            </div>
           </div>
         )}
 
         {/* Tools Viewer Modal */}
-        <Dialog open={showToolsModal} onOpenChange={setShowToolsModal}>
+        <Dialog open={showToolsModal} onOpenChange={(open) => {
+          setShowToolsModal(open);
+          if (!open) {
+            // Clean up temp tools if they exist
+            setServerTools(prev => {
+              const newTools = { ...prev };
+              delete newTools.temp;
+              return newTools;
+            });
+          }
+        }}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {selectedServer?.name} - Available Tools
+                {selectedServer?.name} - Tool Details
               </DialogTitle>
               <DialogDescription>
-                {serverTools.length} tool(s) discovered from this MCP server
+                Detailed information about the selected tool
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-3">
-              {serverTools.map((tool, index) => (
+              {(serverTools.temp || []).map((tool, index) => (
                 <Card key={index}>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
@@ -730,9 +926,9 @@ const MCPServers = () => {
                 </Card>
               ))}
 
-              {serverTools.length === 0 && (
+              {(serverTools.temp || []).length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
-                  No tools available from this server
+                  No tool details available
                 </div>
               )}
             </div>

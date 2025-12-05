@@ -4,6 +4,7 @@ Using FastMCP framework for robust MCP server/client management
 """
 import logging
 import asyncio
+import time
 from typing import Dict, Any, Optional, List, Tuple
 from anyio import ClosedResourceError
 from dataclasses import dataclass, field
@@ -15,14 +16,26 @@ import traceback
 import hashlib
 import shutil
 import os
+import uuid
 from contextlib import AsyncExitStack
+
+# Import OpenLLMetry decorators and telemetry service
+try:
+    from traceloop.sdk.decorators import tool as tool_decorator
+    TRACELOOP_ENABLED = True
+except ImportError:
+    def tool_decorator(name=None, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    TRACELOOP_ENABLED = False
 
 logger = logging.getLogger(__name__)
 
 # Connection timeout settings
-CONNECTION_TIMEOUT = 30  # seconds
-PING_TIMEOUT = 10  # seconds
-TOOL_EXECUTION_TIMEOUT = 60  # seconds for tool execution (wait tools need more time)
+CONNECTION_TIMEOUT = 60  # seconds (increased for Docker MCP on Windows)
+PING_TIMEOUT = 15  # seconds (increased for slower responses)
+TOOL_EXECUTION_TIMEOUT = 120  # seconds for tool execution (wait tools need more time)
 MAX_CONNECTION_ATTEMPTS = 3
 BASE_RETRY_DELAY = 2  # seconds
 MAX_RETRY_DELAY = 15  # seconds
@@ -84,6 +97,62 @@ class FastMCPManager:
         # Circuit breaker: (server_id, tool_name) -> failure_count
         self._failure_counts: Dict[Tuple[str, str], int] = {}
         self._circuit_breaker_threshold = 3  # Open circuit after 3 consecutive failures
+    
+    async def load_config_from_file(self, config_file_path: str) -> bool:
+        """
+        Load MCP server configurations from a JSON file.
+        
+        Args:
+            config_file_path: Path to the JSON configuration file
+            
+        Returns:
+            True if successfully loaded
+        """
+        try:
+            if not os.path.exists(config_file_path):
+                logger.warning(f"Configuration file not found: {config_file_path}")
+                return False
+                
+            with open(config_file_path, 'r') as f:
+                config_data = json.load(f)
+            
+            if "mcpServers" not in config_data:
+                logger.warning("No 'mcpServers' key found in configuration file")
+                return False
+            
+            loaded_count = 0
+            for server_name, server_config in config_data["mcpServers"].items():
+                try:
+                    # Create MCPServerConfig from JSON data
+                    config = MCPServerConfig(
+                        server_id=f"mcp_{uuid.uuid4().hex[:12]}",
+                        name=server_name,
+                        transport_type=server_config.get("transport", "stdio"),
+                        url=server_config.get("url"),
+                        headers=server_config.get("headers", {}),
+                        auth_type=server_config.get("auth_type"),
+                        auth_token=server_config.get("auth_token"),
+                        command=server_config.get("command"),
+                        args=server_config.get("args", []),
+                        env=server_config.get("env", {}),
+                        cwd=server_config.get("cwd")
+                    )
+                    
+                    # Register the server
+                    await self.register_server(config)
+                    loaded_count += 1
+                    logger.info(f"Loaded MCP server configuration: {server_name}")
+                    
+                except Exception as e:
+                    logger.error(f"Error loading MCP server {server_name}: {e}")
+                    continue
+            
+            logger.info(f"Successfully loaded {loaded_count} MCP server configurations from {config_file_path}")
+            return loaded_count > 0
+            
+        except Exception as e:
+            logger.error(f"Error loading MCP configuration from file {config_file_path}: {e}")
+            return False
     
     def _validate_auth_config(self, config: MCPServerConfig) -> None:
         """
@@ -299,10 +368,27 @@ class FastMCPManager:
         if config.auth_type == "bearer" and config.auth_token:
             # Explicit bearer token configuration
             auth = config.auth_token
+            # FORCE: Add to headers to be absolutely sure
+            if not has_auth_header:
+                # Special handling for Browser Use MCP
+                if config.url and "api.browser-use.com" in config.url:
+                    headers["X-Browser-Use-API-Key"] = config.auth_token
+                    logger.info(f"✓ Added X-Browser-Use-API-Key header for {config.server_id}")
+                else:
+                    headers["Authorization"] = f"Bearer {config.auth_token}"
+                    logger.info(f"✓ Added Authorization header for {config.server_id}")
             logger.info(f"✓ Using bearer token authentication for {config.server_id} (explicit auth_type)")
         elif config.auth_token and not has_auth_header:
             # auth_token provided without auth_type - assume bearer
             auth = config.auth_token
+            # FORCE: Add to headers to be absolutely sure
+            # Special handling for Browser Use MCP
+            if config.url and "api.browser-use.com" in config.url:
+                headers["X-Browser-Use-API-Key"] = config.auth_token
+                logger.info(f"✓ Added X-Browser-Use-API-Key header for {config.server_id}")
+            else:
+                headers["Authorization"] = f"Bearer {config.auth_token}"
+                logger.info(f"✓ Added Authorization header for {config.server_id}")
             logger.info(f"✓ Using token authentication (assuming bearer) for {config.server_id}")
         elif has_auth_header:
             # Authorization header already in headers - no need for separate auth
@@ -348,8 +434,24 @@ class FastMCPManager:
                 raise ValueError("Command required for STDIO transport")
 
             # Resolve command path (e.g. 'npx' -> '/usr/local/bin/npx')
-            command_path = shutil.which(config.command) or config.command
+            # But don't resolve if we already have a full path to an executable
+            if os.path.isabs(config.command) and os.path.isfile(config.command):
+                command_path = config.command
+            else:
+                command_path = shutil.which(config.command) or config.command
             logger.info(f"Creating STDIO client for command: {command_path} (original: {config.command})")
+            
+            # Additional Windows-specific logging
+            if os.name == 'nt':  # Windows
+                logger.info(f"Windows detected - command path: {command_path}")
+                # Check if the command is a valid executable
+                if command_path and not os.path.isfile(command_path):
+                    logger.warning(f"Command path does not exist: {command_path}")
+                elif command_path:
+                    # Check file extension
+                    _, ext = os.path.splitext(command_path)
+                    if ext.lower() not in ['.exe', '.com', '.bat', '.cmd']:
+                        logger.warning(f"Command may not be a valid executable on Windows: {command_path} (extension: {ext})")
 
             server_key = (config.name or config.server_id).strip() or config.server_id
 
@@ -595,7 +697,8 @@ class FastMCPManager:
             "server disconnected",
             "socket closed",
             "network error",
-            "remote end closed"
+            "remote end closed",
+            "client is not connected"
         ]
         return (
             isinstance(error, (ConnectionError, BrokenPipeError, OSError, IOError)) or
@@ -630,6 +733,17 @@ class FastMCPManager:
         # Check cache first
         cached = self._get_cached_result(server_id, tool_name, arguments)
         if cached is not None:
+            # Set telemetry attributes for cached result
+            try:
+                from services.telemetry_service import telemetry_service
+                current_span = telemetry_service.get_current_span()
+                if current_span and current_span.is_recording():
+                    current_span.set_attribute("tool.name", tool_name)
+                    current_span.set_attribute("tool.server_id", server_id)
+                    current_span.set_attribute("tool.cached", True)
+                    current_span.set_attribute("tool.success", True)
+            except Exception:
+                pass
             return cached
             
         logger.info(f"Executing tool {tool_name} on {server_id}")
@@ -664,10 +778,43 @@ class FastMCPManager:
             client = self.clients[server_id]
 
             try:
+                # Add OpenTelemetry tracing for tool execution
+                from services.telemetry_service import telemetry_service
+                
+                start_time = time.time()
+                
+                # Create span for tool execution
+                try:
+                    current_span = telemetry_service.get_current_span()
+                    if current_span and current_span.is_recording():
+                        # Set tool attributes
+                        current_span.set_attribute("tool.name", tool_name)
+                        current_span.set_attribute("tool.server_id", server_id)
+                        current_span.set_attribute("tool.server_name", self.servers[server_id].name if server_id in self.servers else "unknown")
+                        current_span.set_attribute("tool.input", json.dumps(arguments)[:1000])  # Limit size
+                        current_span.set_attribute("mcp.server_id", server_id)
+                        current_span.set_attribute("mcp.tool_name", tool_name)
+                except Exception as attr_error:
+                    logger.debug(f"Could not set tool attributes: {attr_error}")
+                
                 # ✅ CRITICAL: Use existing persistent connection!
                 # Client is already entered in connect_server
                 result = await client.call_tool(tool_name, arguments)
                 result_data = result.data if hasattr(result, 'data') else result
+                
+                # Calculate duration
+                duration_ms = (time.time() - start_time) * 1000
+                
+                # Set success attributes
+                try:
+                    current_span = telemetry_service.get_current_span()
+                    if current_span and current_span.is_recording():
+                        current_span.set_attribute("tool.success", True)
+                        current_span.set_attribute("tool.execution_time_ms", duration_ms)
+                        current_span.set_attribute("tool.output", json.dumps(result_data)[:1000])  # Limit size
+                        current_span.set_attribute("tool.cached", False)
+                except Exception as attr_error:
+                    logger.debug(f"Could not set success attributes: {attr_error}")
                 
                 # Success! Cache and return
                 self._cache_result(server_id, tool_name, arguments, result_data)
@@ -702,6 +849,11 @@ class FastMCPManager:
                     
                     await asyncio.sleep(wait_time)
 
+                # 0. Check for Auth Errors -> Fail Fast
+                if "401" in str(e) or "Unauthorized" in str(e):
+                    logger.error(f"Authentication failed for {server_id} during tool execution. This usually means the API key is invalid or has insufficient credits.")
+                    raise Exception(f"Authentication failed for {server_id}. Please check your API key and credits/quota.")
+
                 # 1. Check for Rate Limits -> Wait & Retry
                 if self._is_rate_limit_error(e):
                     await handle_retry_or_raise()
@@ -730,6 +882,12 @@ class FastMCPManager:
                 last_error = e
                 error_str = str(e)
                 
+                # Debug: Log response body if available
+                if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                    logger.error(f"Error response body from {server_id}: {e.response.text}")
+                if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                    logger.error(f"Error status code from {server_id}: {e.response.status_code}")
+
                 # Check for rate limit or timeout in generic exceptions
                 if self._is_rate_limit_error(e):
                     retry_after = self._extract_retry_after(e) or int(base_delay * (2 ** (attempt - 1)))

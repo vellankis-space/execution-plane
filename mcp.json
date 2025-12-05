@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "docker-mcp-toolkit": {
+      "transport": "http",
+      "url": "http://localhost:3000",
+      "auth_token": "my-test-token-123",
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}

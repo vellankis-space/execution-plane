@@ -37,6 +37,10 @@ class LLMService:
     ):
         """Initialize LLM with optional LiteLLM integration"""
         
+        # Validate inputs
+        if not model or not model.strip():
+            raise ValueError(f"No model specified for {provider} provider. Please select a valid model.")
+        
         # Use LiteLLM if available and enabled
         if use_litellm and LITELLM_AVAILABLE:
             return self._initialize_with_litellm(provider, model, temperature, max_tokens, user_api_key)
@@ -53,6 +57,10 @@ class LLMService:
         user_api_key: Optional[str]
     ):
         """Initialize LLM using LiteLLM"""
+        # Validate inputs
+        if not model or not model.strip():
+            raise ValueError(f"No model specified for {provider} provider. Please select a valid model.")
+        
         try:
             from langchain_community.chat_models import ChatLiteLLM
         except ImportError:

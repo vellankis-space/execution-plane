@@ -33,6 +33,7 @@ class AgentCreate(AgentBase):
 class AgentInDB(AgentBase):
     agent_id: str
     api_key_encrypted: Optional[str] = None
+    tenant_id: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -41,6 +42,9 @@ class AgentInDB(AgentBase):
 
 class AgentExecutionRequest(BaseModel):
     input: str
+    # Optional workflow context - when executing agent as part of a workflow
+    workflow_id: Optional[str] = None
+    workflow_execution_id: Optional[str] = None
 
 class AgentChatRequest(BaseModel):
     message: str

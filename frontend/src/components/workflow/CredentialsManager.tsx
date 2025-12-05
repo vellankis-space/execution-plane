@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Key, Plus, Trash2, Eye, EyeOff, Edit } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -230,7 +231,7 @@ export function CredentialsManager() {
             Add Credential
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
               {editingCredential ? "Edit" : "Add"} Credential
@@ -239,47 +240,90 @@ export function CredentialsManager() {
               Store credentials securely for use in your workflows
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 mt-4">
-            <div>
-              <Label htmlFor="cred-name">Credential Name</Label>
-              <Input
-                id="cred-name"
-                placeholder="e.g., Production API Key"
-                value={credentialName}
-                onChange={(e) => setCredentialName(e.target.value)}
-                className="mt-1"
-              />
-            </div>
+          <ScrollArea className="flex-1 max-h-[60vh]">
+            <div className="space-y-4 mt-4 pr-4">
+              <div>
+                <Label htmlFor="cred-name">Credential Name</Label>
+                <Input
+                  id="cred-name"
+                  placeholder="e.g., Production API Key"
+                  value={credentialName}
+                  onChange={(e) => setCredentialName(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
 
-            <div>
-              <Label htmlFor="cred-type">Credential Type</Label>
-              <Select value={selectedType} onValueChange={setSelectedType}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Select credential type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CREDENTIAL_TYPES.map((type) => (
-                    <SelectItem key={type.type} value={type.type}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div>
+                <Label htmlFor="cred-type">Credential Type</Label>
+                <Select value={selectedType} onValueChange={setSelectedType}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select credential type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CREDENTIAL_TYPES.map((type) => (
+                      <SelectItem key={type.type} value={type.type}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {selectedCredentialType && (
-              <div className="space-y-3 pt-2 border-t">
-                {selectedCredentialType.fields.map((field) => (
-                  <div key={field.name}>
-                    <Label htmlFor={field.name}>
-                      {field.label}
-                      {field.required && <span className="text-red-500 ml-1">*</span>}
-                    </Label>
-                    {field.type === "password" ? (
-                      <div className="relative mt-1">
+              {selectedCredentialType && (
+                <div className="space-y-3 pt-2 border-t">
+                  {selectedCredentialType.fields.map((field) => (
+                    <div key={field.name}>
+                      <Label htmlFor={field.name}>
+                        {field.label}
+                        {field.required && <span className="text-red-500 ml-1">*</span>}
+                      </Label>
+                      {field.type === "password" ? (
+                        <div className="relative mt-1">
+                          <Input
+                            id={field.name}
+                            type={showSecrets[field.name] ? "text" : "password"}
+                            value={credentialData[field.name] || ""}
+                            onChange={(e) =>
+                              setCredentialData((prev) => ({
+                                ...prev,
+                                [field.name]: e.target.value,
+                              }))
+                            }
+                            className="pr-10"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-0 top-0 h-full"
+                            onClick={() => toggleSecretVisibility(field.name)}
+                          >
+                            {showSecrets[field.name] ? (
+                              <EyeOff className="w-4 h-4" />
+                            ) : (
+                              <Eye className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
+                      ) : field.type === "checkbox" ? (
+                        <div className="flex items-center mt-2">
+                          <input
+                            id={field.name}
+                            type="checkbox"
+                            checked={credentialData[field.name] || false}
+                            onChange={(e) =>
+                              setCredentialData((prev) => ({
+                                ...prev,
+                                [field.name]: e.target.checked,
+                              }))
+                            }
+                            className="w-4 h-4"
+                          />
+                        </div>
+                      ) : (
                         <Input
                           id={field.name}
-                          type={showSecrets[field.name] ? "text" : "password"}
+                          type={field.type}
                           value={credentialData[field.name] || ""}
                           onChange={(e) =>
                             setCredentialData((prev) => ({
@@ -287,64 +331,22 @@ export function CredentialsManager() {
                               [field.name]: e.target.value,
                             }))
                           }
-                          className="pr-10"
+                          className="mt-1"
                         />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-0 top-0 h-full"
-                          onClick={() => toggleSecretVisibility(field.name)}
-                        >
-                          {showSecrets[field.name] ? (
-                            <EyeOff className="w-4 h-4" />
-                          ) : (
-                            <Eye className="w-4 h-4" />
-                          )}
-                        </Button>
-                      </div>
-                    ) : field.type === "checkbox" ? (
-                      <div className="flex items-center mt-2">
-                        <input
-                          id={field.name}
-                          type="checkbox"
-                          checked={credentialData[field.name] || false}
-                          onChange={(e) =>
-                            setCredentialData((prev) => ({
-                              ...prev,
-                              [field.name]: e.target.checked,
-                            }))
-                          }
-                          className="w-4 h-4"
-                        />
-                      </div>
-                    ) : (
-                      <Input
-                        id={field.name}
-                        type={field.type}
-                        value={credentialData[field.name] || ""}
-                        onChange={(e) =>
-                          setCredentialData((prev) => ({
-                            ...prev,
-                            [field.name]: e.target.value,
-                          }))
-                        }
-                        className="mt-1"
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleSaveCredential}>
-                {editingCredential ? "Update" : "Create"} Credential
-              </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          </ScrollArea>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveCredential}>
+              {editingCredential ? "Update" : "Create"} Credential
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -365,15 +367,15 @@ export function CredentialsManager() {
         ) : (
           credentials.map((cred) => (
             <Card key={cred.id} className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-md bg-primary/10">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="p-2 rounded-md bg-primary/10 shrink-0">
                     <Key className="w-5 h-5 text-primary" />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-semibold">{cred.name}</h4>
-                      <Badge variant="secondary">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-semibold truncate">{cred.name}</h4>
+                      <Badge variant="secondary" className="shrink-0">
                         {CREDENTIAL_TYPES.find((t) => t.type === cred.type)?.label ||
                           cred.type}
                       </Badge>
@@ -383,7 +385,7 @@ export function CredentialsManager() {
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0">
                   <Button
                     variant="outline"
                     size="icon"
@@ -404,6 +406,6 @@ export function CredentialsManager() {
           ))
         )}
       </div>
-    </div >
+    </div>
   );
 }

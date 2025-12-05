@@ -11,19 +11,21 @@ import Chat from "./pages/Chat";
 import Agents from "./pages/Agents";
 import Workflows from "./pages/Workflows";
 import Monitoring from "./pages/Monitoring";
+import Observability from "./pages/Observability";
 import Audit from "./pages/Audit";
 import MCPServers from "./pages/MCPServers";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import { AgentBuilder } from "./components/AgentBuilder";
 import { WorkflowBuilder } from "./components/workflow/WorkflowBuilder";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, loading } = useAuth();
+  const { user, isLoading } = useAuth();
 
-  if (loading) {
+  if (isLoading) {
     return <div>Loading...</div>;
   }
 
@@ -95,6 +97,18 @@ const App = () => (
                 }
               />
               <Route
+                path="/observability"
+                element={
+                  <ProtectedRoute>
+                    <MainLayout>
+                      <ErrorBoundary>
+                        <Observability />
+                      </ErrorBoundary>
+                    </MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/audit"
                 element={
                   <ProtectedRoute>
@@ -118,7 +132,9 @@ const App = () => (
                 path="/playground"
                 element={
                   <ProtectedRoute>
-                    <AgentBuilder />
+                    <MainLayout>
+                      <AgentBuilder />
+                    </MainLayout>
                   </ProtectedRoute>
                 }
               />

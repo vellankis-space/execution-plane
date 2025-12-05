@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Optional
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # Set MAX_MCP_TOOLS_PER_AGENT in the environment if you want to enforce a limit.
     # Default of 0 means "no limit" so all MCP tools remain available.
     MAX_MCP_TOOLS_PER_AGENT: int = int(os.getenv("MAX_MCP_TOOLS_PER_AGENT", "0"))
+
+    # OpenTelemetry / Traceloop
+    TRACELOOP_BASE_URL: Optional[str] = None
+    OTEL_EXPORTER_OTLP_ENDPOINT: Optional[str] = None
+    JAEGER_QUERY_URL: Optional[str] = os.getenv("JAEGER_QUERY_URL", "http://jaeger:16686")
     
     class Config:
         case_sensitive = True

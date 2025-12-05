@@ -33,7 +33,7 @@ export const MCPServerModal: React.FC<MCPServerModalProps> = ({ onServerAdded })
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    transport_type: 'http',
+    transport_type: 'stdio',
     url: '',
     auth_type: '',
     auth_token: '',
@@ -43,11 +43,50 @@ export const MCPServerModal: React.FC<MCPServerModalProps> = ({ onServerAdded })
     cwd: ''
   });
 
+  // Apply preset configurations
+  const applyPreset = (preset: string) => {
+    switch (preset) {
+      case 'docker-mcp':
+        setFormData({
+          name: 'Docker MCP Toolkit',
+          description: 'Docker-based MCP toolkit with gateway run command',
+          transport_type: 'stdio',
+          url: '',
+          auth_type: '',
+          auth_token: '',
+          command: 'docker',
+          args: JSON.stringify(['mcp', 'gateway', 'run'], null, 2),
+          env: JSON.stringify({ PYTHONUNBUFFERED: '1' }, null, 2),
+          cwd: '',
+        });
+        break;
+      case 'local-calculator':
+        setFormData({
+          name: 'Local Calculator',
+          description: 'Simple calculator tool for arithmetic operations',
+          transport_type: 'stdio',
+          url: '',
+          auth_type: '',
+          auth_token: '',
+          command: 'python',
+          args: JSON.stringify([
+            '-c',
+            "import json, sys; print(json.dumps({'protocolVersion': '2024-06-12', 'capabilities': {'tools': {'listTools': True}}})); sys.stdout.flush(); exec('import sys,json\\nwhile True:\\n line = sys.stdin.readline()\\n if not line: break\\n try:\\n  req = json.loads(line)\\n  if req.get(\"method\") == \"tools/list\":\\n   resp = {\"id\": req.get(\"id\"), \"result\": {\"tools\": [{\"name\": \"calculate\", \"description\": \"Performs basic arithmetic calculations\", \"inputSchema\": {\"type\": \"object\", \"properties\": {\"expression\": {\"type\": \"string\", \\\"description\": \"Mathematical expression to evaluate\"}}, \"required\": [\"expression\"]}}]}}\\n   print(json.dumps(resp))\\n   sys.stdout.flush()\\n  elif req.get(\"method\") == \"tools/call\":\\n   args = req.get(\"params\", {}).get(\"arguments\", {})\\n   expr = args.get(\"expression\", \"\")\\n   try:\\n    result = eval(expr)\\n    resp = {\"id\": req.get(\"id\"), \"result\": {\"content\": [{\"type\": \"text\", \"text\": str(result)}]}}\\n   except Exception as e:\\n    resp = {\"id\": req.get(\"id\"), \"error\": {\"code\": -32603, \"message\": str(e)}}\\n   print(json.dumps(resp))\\n   sys.stdout.flush()\\n except Exception as e:\\n  print(json.dumps({\"id\": 0, \"error\": {\"code\": -32700, \"message\": str(e)}}))\\n  sys.stdout.flush()\\n')"
+          ], null, 2),
+          env: JSON.stringify({ PYTHONUNBUFFERED: '1' }, null, 2),
+          cwd: '',
+        });
+        break;
+      default:
+        break;
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       name: '',
       description: '',
-      transport_type: 'http',
+      transport_type: 'stdio',
       url: '',
       auth_type: '',
       auth_token: '',
@@ -210,6 +249,32 @@ export const MCPServerModal: React.FC<MCPServerModalProps> = ({ onServerAdded })
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Preset Buttons */}
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => applyPreset('docker-mcp')}
+              className="flex flex-col items-center justify-center h-auto p-3"
+            >
+              <div className="font-medium">Docker MCP</div>
+              <div className="text-xs text-muted-foreground mt-1 text-center">
+                docker mcp gateway run
+              </div>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => applyPreset('local-calculator')}
+              className="flex flex-col items-center justify-center h-auto p-3"
+            >
+              <div className="font-medium">Calculator</div>
+              <div className="text-xs text-muted-foreground mt-1 text-center">
+                Local Python calculator
+              </div>
+            </Button>
+          </div>
+
           <div>
             <Label htmlFor="name">Server Name *</Label>
             <Input
@@ -242,9 +307,9 @@ export const MCPServerModal: React.FC<MCPServerModalProps> = ({ onServerAdded })
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="stdio">STDIO (Local Process)</SelectItem>
                 <SelectItem value="http">HTTP</SelectItem>
                 <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
-                <SelectItem value="stdio">STDIO (Local Process)</SelectItem>
               </SelectContent>
             </Select>
           </div>
